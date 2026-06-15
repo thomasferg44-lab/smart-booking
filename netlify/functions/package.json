@@ -1,0 +1,9 @@
+{
+  "name": "functions",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.1",
+    "resend": "^6.12.4"
+  }
+}
