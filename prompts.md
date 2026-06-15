@@ -231,13 +231,13 @@ The function must:
    Both emails init Resend with `process.env.RESEND_API_KEY`
 
    **Client confirmation email** (to: client's email):
-   - From: `${process.env.COMPANY_NAME} <${process.env.REPLY_TO_EMAIL}>`
+   - From: `${process.env.COMPANY_NAME} <onboarding@resend.dev>`
    - Subject: `Your booking request — ${process.env.COMPANY_NAME}`
    - Reply-to: `process.env.OWNER_EMAIL`
    - HTML: clean inline-styled email showing their booking summary (service, date, time, all intake fields as key-value rows, reference ID)
 
    **Owner alert email** (to: `process.env.OWNER_EMAIL`):
-   - From: `Booking Bot <${process.env.REPLY_TO_EMAIL}>`
+   - From: `Booking Bot <onboarding@resend.dev>`
    - Subject: `New booking from ${name} — ${service}`
    - Reply-to: client's email (so owner can reply directly to client)
    - HTML: all form data including phone, intake fields, notes, booking ID

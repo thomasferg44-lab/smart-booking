@@ -142,14 +142,14 @@ export const handler = async (event) => {
 
   await Promise.all([
     resend.emails.send({
-      from: `${process.env.COMPANY_NAME} <${process.env.REPLY_TO_EMAIL}>`,
+      from: `${process.env.COMPANY_NAME} <onboarding@resend.dev>`,
       to: email,
       replyTo: process.env.OWNER_EMAIL,
       subject: `Your booking request — ${process.env.COMPANY_NAME}`,
       html: clientHtml,
     }),
     resend.emails.send({
-      from: `Booking Bot <${process.env.REPLY_TO_EMAIL}>`,
+      from: `Booking Bot <onboarding@resend.dev>`,
       to: process.env.OWNER_EMAIL,
       replyTo: email,
       subject: `New booking from ${name} — ${service}`,
