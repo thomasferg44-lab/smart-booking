@@ -85,6 +85,27 @@ select.input {
   }
 }
 
+/* Accounts summary stat cards — keep money values inside their cards. */
+.accounts-summary-card {
+  padding: 20px 24px;
+}
+
+.accounts-summary-value {
+  font-size: 26px;
+  overflow-wrap: break-word;
+}
+
+/* On phones the 3-up grid is narrow, so shrink the number and padding. */
+@media (max-width: 639px) {
+  .accounts-summary-card {
+    padding: 16px 12px;
+  }
+
+  .accounts-summary-value {
+    font-size: 18px;
+  }
+}
+
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
