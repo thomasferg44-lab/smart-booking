@@ -8,10 +8,10 @@ export const companyConfig = {
   ownerName: 'Thomas',
   replyToEmail: 'noreply@aqualife.ky',
   services: [
-    'Private lesson (1hr)',
-    'Group session (1hr)',
-    'Stroke assessment (30min)',
-    'Junior squad trial',
+    { name: 'Private lesson (1hr)', price: 75.00 },
+    { name: 'Group session (1hr)', price: 40.00 },
+    { name: 'Stroke assessment (30min)', price: 45.00 },
+    { name: 'Junior squad trial', price: 0.00 }, // TODO: set real price (placeholder)
   ],
   timeSlots: [
     '7:00 am', '8:00 am', '9:00 am',

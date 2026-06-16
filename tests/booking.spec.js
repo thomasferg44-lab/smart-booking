@@ -56,7 +56,7 @@ test('service dropdown contains all configured services', async ({ page }) => {
 
   const options = await page.locator('#service option').allTextContents()
   for (const service of companyConfig.services) {
-    expect(options).toContain(service)
+    expect(options).toContain(service.name)
   }
 })
 
@@ -76,7 +76,7 @@ test('step 1 validation requires service, date and time', async ({ page }) => {
   const continueBtn = page.getByRole('button', { name: 'Continue' })
   await expect(continueBtn).toBeDisabled()
 
-  await page.selectOption('#service', companyConfig.services[0])
+  await page.selectOption('#service', companyConfig.services[0].name)
   await expect(continueBtn).toBeDisabled()
 
   await page.fill('#date', today)
@@ -97,7 +97,7 @@ test('full form flow with mocked submit', async ({ page }) => {
 
   await page.goto('/')
   await fillStep0(page)
-  await fillStep1(page, { service: companyConfig.services[0], timeSlot: companyConfig.timeSlots[0] })
+  await fillStep1(page, { service: companyConfig.services[0].name, timeSlot: companyConfig.timeSlots[0] })
   await fillStep2(page)
 
   await page.getByRole('button', { name: 'Request booking' }).click()
@@ -116,7 +116,7 @@ test('error message appears on failed submit', async ({ page }) => {
 
   await page.goto('/')
   await fillStep0(page)
-  await fillStep1(page, { service: companyConfig.services[0], timeSlot: companyConfig.timeSlots[0] })
+  await fillStep1(page, { service: companyConfig.services[0].name, timeSlot: companyConfig.timeSlots[0] })
   await fillStep2(page)
 
   await page.getByRole('button', { name: 'Request booking' }).click()
@@ -135,7 +135,7 @@ test('confirmation page shows booking summary', async ({ page }) => {
     })
   })
 
-  const service = companyConfig.services[1]
+  const service = companyConfig.services[1].name
   const timeSlot = companyConfig.timeSlots[1]
 
   await page.goto('/')

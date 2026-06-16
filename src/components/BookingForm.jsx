@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react'
 import { companyConfig } from '../companyConfig'
 import IntakeField from './IntakeField'
+import PriceBadge from './PriceBadge'
 
 const STEPS = ['Your details', 'Book a slot', 'A bit about you']
 
@@ -183,11 +184,12 @@ function BookingForm({ onSuccess }) {
                   Select a service
                 </option>
                 {companyConfig.services.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
+                  <option key={option.name} value={option.name}>
+                    {option.name}
                   </option>
                 ))}
               </select>
+              <PriceBadge service={service} services={companyConfig.services} />
             </div>
 
             <div>
