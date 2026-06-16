@@ -1,450 +1,179 @@
-# PROMPTS.md — Smart Booking + Intake Form
-# Run these in order. One at a time. Wait for each to finish before pasting the next.
-# After every prompt: confirm `npm run build` passes with zero errors.
+# PROMPTS.md — Build the Admin Dashboard
+
+Run these in order, ONE at a time, inside the existing `auto-booking` project in Claude Code. After each prompt: let it finish, run `npm run build`, confirm zero errors, then move to the next. Don't paste the next prompt until the current one is done.
+
+Before Prompt 1, make sure Claude Code has read `CLAUDE.md` and `DESIGN-BRIEF.md` in this project.
 
 ---
 
-## PROMPT 1 — Scaffold + config
-▶ START ─────────────────────────────────────────────────────────────────────
+## PROMPT 1 — Backend: the two password-gated functions
 
-Read CLAUDE.md.
+```
+Read CLAUDE.md and DESIGN-BRIEF.md fully before starting.
 
-Scaffold the full project. Do all of the following:
+Build the two new Netlify Functions that power the admin dashboard. Do NOT touch submit-booking.js or any existing file.
 
-1. Run `npm create vite@latest . -- --template react` to init the Vite React project in the current folder
+Create netlify/functions/admin-bookings.js:
+- Handler accepts POST only (else 405).
+- Parse JSON body; expect { password }.
+- If password !== process.env.ADMIN_PASSWORD, return 401 with { error: "Unauthorized" } and nothing else.
+- Reuse the same Supabase client pattern as submit-booking.js, using process.env.SUPABASE_URL and process.env.SUPABASE_SERVICE_ROLE_KEY.
+- Query the bookings table, select all columns, order by created_at descending.
+- Return 200 with { bookings: [...] }.
+- Wrap in try/catch, log errors server-side, return 500 with a generic message on failure.
 
-2. Install all frontend deps:
-   ```
-   npm install
-   npm install -D tailwindcss@3 postcss autoprefixer
-   npx tailwindcss init -p
-   ```
+Create netlify/functions/admin-update.js:
+- Handler accepts POST only (else 405).
+- Parse JSON body; expect { password, id, status }.
+- Validate password against process.env.ADMIN_PASSWORD (401 if wrong).
+- Validate status is one of: "confirmed", "cancelled", "pending" (400 if not).
+- Validate id is present (400 if not).
+- Update the matching bookings row's status; return 200 with { success: true }.
+- try/catch with generic 500 on failure.
 
-3. Install function deps:
-   ```
-   cd netlify/functions && npm install @supabase/supabase-js resend && cd ../..
-   ```
+Both functions must never expose the service key or password in any response.
 
-4. Create `netlify.toml` with:
-   - build command: `npm run build`
-   - publish: `dist`
-   - functions directory: `netlify/functions`
-   - SPA redirect: `/* → /index.html` status 200
+Add ADMIN_PASSWORD to .env.example with a placeholder.
 
-5. Configure Tailwind: update `tailwind.config.js` content to include `./index.html` and `./src/**/*.{js,jsx}`
-
-6. Create `src/index.css` with:
-   - `@tailwind base/components/utilities`
-   - CSS variables: `--color-primary` and `--color-accent` on `:root`
-   - `.input` class: full-width, border, rounded-lg, focus ring using `--color-primary`
-   - `.btn-primary` class: background `var(--color-primary)`, white text, hover brightness filter, disabled opacity
-   - `.text-brand`, `.border-brand` utility classes using CSS vars
-
-7. Create `src/companyConfig.js` — copy this exactly:
-
-```js
-export const companyConfig = {
-  name: 'Cayman AquaLife Academy',
-  tagline: 'Book your swimming lesson',
-  logo: '/logo.png',
-  primaryColor: '#21B7B5',
-  accentColor: '#E7A034',
-  ownerEmail: 'thomas@aqualife.ky',
-  ownerName: 'Thomas',
-  replyToEmail: 'noreply@aqualife.ky',
-  services: [
-    'Private lesson (1hr)',
-    'Group session (1hr)',
-    'Stroke assessment (30min)',
-    'Junior squad trial',
-  ],
-  timeSlots: [
-    '7:00 am', '8:00 am', '9:00 am',
-    '4:00 pm', '5:00 pm', '6:00 pm',
-  ],
-  intakeFields: [
-    {
-      id: 'swimmer_name',
-      label: 'Swimmer name',
-      type: 'text',
-      placeholder: 'If different from booking name',
-      required: false,
-    },
-    {
-      id: 'experience',
-      label: 'Swimming experience',
-      type: 'select',
-      options: ['Complete beginner', 'Can float/kick', 'Beginner strokes', 'Intermediate', 'Advanced / competitive'],
-      required: true,
-    },
-    {
-      id: 'age_group',
-      label: 'Age group',
-      type: 'radio',
-      options: ['Under 6', '6–12', '13–17', 'Adult (18+)'],
-      required: true,
-    },
-    {
-      id: 'goals',
-      label: 'Goals for lessons',
-      type: 'textarea',
-      placeholder: 'e.g. learn freestyle, improve turns, prepare for competition...',
-      required: false,
-    },
-    {
-      id: 'medical',
-      label: 'Any medical conditions or notes we should know?',
-      type: 'textarea',
-      placeholder: 'Leave blank if none',
-      required: false,
-    },
-  ],
-  confirmationMessage: "Thanks! We'll review your request and confirm your spot within 24 hours.",
-  location: 'Lions Pool, George Town, Cayman Islands',
-  locationUrl: 'https://maps.google.com/?q=Lions+Pool+Grand+Cayman',
-}
+Run npm run build and confirm zero errors. List the two files you created and confirm submit-booking.js was not modified.
 ```
 
-8. Create `.env.example`:
+---
+
+## PROMPT 2 — Routing + the password gate
+
 ```
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
-RESEND_API_KEY=
-OWNER_EMAIL=
-OWNER_NAME=
-COMPANY_NAME=
-REPLY_TO_EMAIL=
-PRIMARY_COLOR=
-```
+Read CLAUDE.md and DESIGN-BRIEF.md.
 
-9. Create `.gitignore` including: `node_modules`, `dist`, `.env`, `netlify/functions/node_modules`
+Set up the admin route and login gate. The booking form stays exactly as is.
 
-10. Create `supabase-setup.sql`:
-```sql
-create table if not exists bookings (
-  id            uuid primary key default gen_random_uuid(),
-  name          text not null,
-  email         text not null,
-  phone         text,
-  service       text not null,
-  requested_date date not null,
-  requested_time text not null,
-  intake_data   jsonb default '{}'::jsonb,
-  notes         text,
-  status        text not null default 'pending'
-                  check (status in ('pending', 'confirmed', 'cancelled')),
-  created_at    timestamptz not null default now()
-);
+1. If react-router-dom is not installed, install it. Wire the app so:
+   - "/" renders the existing booking form (unchanged).
+   - "/admin" renders the new admin experience.
+   Keep the existing netlify.toml SPA redirect (/* -> /index.html) so /admin resolves.
 
-create index if not exists bookings_status_idx on bookings(status);
-create index if not exists bookings_date_idx on bookings(requested_date);
-create index if not exists bookings_email_idx on bookings(email);
+2. Create src/admin/adminTheme.js:
+   - Import companyConfig.
+   - Export { brandName, accent } where accent = companyConfig.primaryColor || "#21B7B5".
+   - Export an accentWash helper (accent at ~10% opacity) for soft fills.
 
-alter table bookings enable row level security;
+3. Create src/admin/LoginGate.jsx following DESIGN-BRIEF.md:
+   - A centred, calm password screen on the --canvas background.
+   - Branded with brandName from adminTheme.
+   - One password input (type=password) + one "Enter" button using the accent.
+   - On submit, call admin-bookings with { password }. If 200, lift the password up to the parent and store it in sessionStorage under "admin_pw". If 401, show the message "That password didn't match." inline, no alert boxes.
+   - Frosted, premium, minimal. Inter font, tight tracking per the brief.
+
+4. Create src/admin/AdminApp.jsx:
+   - On mount, read sessionStorage "admin_pw". If present, try loading bookings; if it works, go straight to the dashboard (skip the gate).
+   - If no valid password, show LoginGate.
+   - Once authenticated, render <Dashboard password={pw} /> (Dashboard comes next prompt — for now render a placeholder that says "Authenticated").
+
+Load the Inter font (Google Fonts) globally.
+
+Run npm run build, confirm zero errors. Confirm "/" still shows the booking form untouched.
 ```
 
-11. Run `npm run build` — confirm zero errors. Report the dist size.
+---
 
-◀ END ───────────────────────────────────────────────────────────────────────
+## PROMPT 3 — The dashboard: stats, frosted bar, bookings list
 
+```
+Read CLAUDE.md and DESIGN-BRIEF.md again before building UI. Follow the brief's tokens, type scale, spacing, and the frosted-bar signature element exactly.
+
+Build src/admin/Dashboard.jsx and its child components. Use the password prop to call admin-bookings on mount and load all bookings into state.
+
+Components to create:
+
+src/admin/StatusPill.jsx
+- Props: status. Renders a colour-coded pill per the brief's status colours (pending/confirmed/cancelled inks on their washes). Rounded 999px, 11px tracked label.
+
+src/admin/BookingCard.jsx
+- Props: booking, onUpdate.
+- A surface card with hairline border and the soft shadow from the brief.
+- Top line: name (600) + service · formatted date · time on the right.
+- Second line: email in --ink-soft + a StatusPill.
+- Tap/click to expand: reveal intake_data as clean label/value rows (format snake_case keys to Title Case) plus notes if present.
+- Action buttons: "Confirm" and "Cancel". Only show "Confirm" if not already confirmed; only show "Cancel" if not already cancelled. On click, call onUpdate(id, status). While the request is in flight, disable the buttons.
+- When status changes, animate the pill colour with a soft spring and settle the card (respect prefers-reduced-motion).
+
+src/admin/Dashboard.jsx
+- The frosted sticky command bar (signature element): backdrop-blur, translucent white, hairline bottom border. Inside: brandName on the left; a rounded search field; a segmented status filter (All / Pending / Confirmed / Cancelled).
+- Below the bar: an eyebrow "BOOKINGS" + today's date on the right.
+- A stats row of three cards: Total, Pending (uses accent), This Week (created_at within last 7 days). Big tabular numbers per the brief.
+- The bookings list, newest first, filtered by the search text (name or email, case-insensitive) and the active status filter.
+- onUpdate handler calls admin-update with { password, id, status }, then optimistically updates local state and shows a toast ("Booking confirmed." / "Booking cancelled.").
+- Loading state: a quiet skeleton of ~4 rows, not a spinner.
+- Empty state per the brief's copy.
+- Fully responsive: flawless at 390px wide. Stat cards scroll/stack, frosted bar collapses search into an icon on mobile.
+
+Run npm run build, confirm zero errors.
+```
 
 ---
 
-## PROMPT 2 — BookingForm (3-step UI)
-▶ START ─────────────────────────────────────────────────────────────────────
+## PROMPT 4 — Design refinement pass (the loop)
 
+```
+Read DESIGN-BRIEF.md once more. Now critique and refine the dashboard against it.
+
+Run the dev server, open /admin, log in, and take screenshots at desktop (1280px) and mobile (390px) widths. For each screen, work through the brief's self-critique checklist:
+- Does it look like one deliberate product, not an admin template?
+- Is the accent used in 3 or fewer places per screen?
+- Are all numbers tabular, labels tracked-out 11px uppercase?
+- Is the frosted bar genuinely frosted when content scrolls under it?
+- Is it flawless on a 390px phone?
+- What one thing can be removed?
+
+Identify the 5 biggest gaps between what you built and the brief, fix them, screenshot again, and confirm each is resolved. Pay special attention to: tracking on large type, shadow softness, the frosted blur actually rendering, spacing consistency on the 8px grid, and the confirm-status spring animation feeling smooth.
+
+Do at least two refinement rounds. Show me before/after notes on what you changed and why. Then run npm run build.
+```
+
+---
+
+## PROMPT 5 — Local test + deploy
+
+```
 Read CLAUDE.md.
 
-Build the frontend. Create these files:
-
-**`src/main.jsx`** — standard Vite React entry point, imports App and index.css
-
-**`src/App.jsx`**:
-- On mount, inject `--color-primary` and `--color-accent` CSS vars from companyConfig onto `document.documentElement`
-- State: `submission` (null or the submitted form data)
-- Renders `<BookingForm onSuccess={setSubmission} />` or `<ConfirmationPage submission={submission} />` based on state
-- Outer div: `min-h-screen bg-gray-50`
-
-**`src/components/IntakeField.jsx`**:
-- Props: `{ field, value, onChange, primaryColor }`
-- Renders the correct input based on `field.type`:
-  - `text` → `<input type="text" className="input">`
-  - `textarea` → `<textarea className="input resize-none" rows={3}>`
-  - `select` → `<select className="input">` with options from `field.options`
-  - `radio` → pill buttons (like the time slot picker). Selected pill: border and bg tint using `primaryColor`. Unselected: gray border, white bg.
-  - `checkbox` → standard checkboxes with `accentColor: primaryColor` style, value is an array
-- Label shows a red `*` if `field.required`
-
-**`src/components/BookingForm.jsx`**:
-
-3-step form with this structure:
-
-Step 0 — "Your details": name (required), email (required), phone (optional)
-Step 1 — "Book a slot": service dropdown, date picker (min=today), time slot pill grid (3 columns)
-Step 2 — "A bit about you": all `companyConfig.intakeFields` rendered via `<IntakeField>`, plus a free-text notes textarea
-
-Step indicator at top: numbered circles (1/2/3), filled with `primaryColor` for completed/current steps, connected by lines that fill when passed. Labels hidden on mobile.
-
-Navigation:
-- "Continue" button advances step (disabled if required fields on current step are empty)
-- "Back" button on steps 1 and 2
-- Final step shows "Request booking" button which calls `handleSubmit`
-
-`handleSubmit`:
-- POST to `/.netlify/functions/submit-booking` with all form state as JSON
-- On success: call `onSuccess({ ...fields, bookingId: data.bookingId })`
-- On error: show inline error message in a red box below the form
-- Loading state: button shows "Sending…" and is disabled
-
-Form card: `bg-white rounded-2xl border border-gray-100 shadow-sm p-6`
-
-Logo at top: `<img src={companyConfig.logo}>` with `onError` that hides it if 404
-
-Run `npm run build` after. Report any errors.
-
-◀ END ───────────────────────────────────────────────────────────────────────
-
+1. Add ADMIN_PASSWORD to my local .env with a test value.
+2. Run `npx netlify dev`. Walk me through testing end to end:
+   - / still shows the booking form and a test submission still works.
+   - /admin shows the gate; wrong password is rejected; correct password loads the dashboard.
+   - Bookings load newest first; search and status filter work.
+   - Confirm and Cancel update a booking and the change persists after refresh.
+   - Check it on a phone-width window.
+3. When local passes, give me the exact git commands to commit and push.
+4. Give me the exact list of what to set in Netlify:
+   - Add env var ADMIN_PASSWORD (the real password for this client).
+   - Confirm SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are already set.
+   - Trigger a deploy without cache.
+5. Tell me how to test the live /admin once deployed.
+```
 
 ---
 
-## PROMPT 3 — Netlify Function (Supabase + Resend)
-▶ START ─────────────────────────────────────────────────────────────────────
-
-Read CLAUDE.md.
-
-Create `netlify/functions/submit-booking.js`. This is the secure backend — all API keys live here, never in the frontend.
-
-The function must:
-
-1. **Validate HTTP method** — return 405 if not POST
-
-2. **Parse and validate body** — required fields: `name`, `email`, `service`, `date`, `time`. Return 400 if missing.
-
-3. **Save to Supabase** using `@supabase/supabase-js`:
-   - Init client with `process.env.SUPABASE_URL` and `process.env.SUPABASE_SERVICE_ROLE_KEY`
-   - Insert into `bookings` table: name, email, phone, service, requested_date (date), requested_time (time), intake_data (intake object as jsonb), notes, status = 'pending'
-   - `.select('id').single()` to get the new row id back
-   - If DB error: log it, return 500
-
-4. **Send two emails in parallel** using `resend` package:
-
-   Both emails init Resend with `process.env.RESEND_API_KEY`
-
-   **Client confirmation email** (to: client's email):
-   - From: `${process.env.COMPANY_NAME} <onboarding@resend.dev>`
-   - Subject: `Your booking request — ${process.env.COMPANY_NAME}`
-   - Reply-to: `process.env.OWNER_EMAIL`
-   - HTML: clean inline-styled email showing their booking summary (service, date, time, all intake fields as key-value rows, reference ID)
-
-   **Owner alert email** (to: `process.env.OWNER_EMAIL`):
-   - From: `Booking Bot <onboarding@resend.dev>`
-   - Subject: `New booking from ${name} — ${service}`
-   - Reply-to: client's email (so owner can reply directly to client)
-   - HTML: all form data including phone, intake fields, notes, booking ID
-
-5. **Return** `{ success: true, bookingId: row.id }` with status 200
-
-Email HTML must be clean inline-styled (no external CSS), readable on mobile, uses `process.env.PRIMARY_COLOR` for the accent badge/button color. Format intake_data entries as a readable table (replace underscores with spaces, capitalize labels, handle array values with join(', ')).
-
-Use `Promise.all` for the two email sends so they run in parallel.
-
-The function file uses `export const handler = async (event) => {}` ESM syntax. The `netlify/functions/package.json` already has `"type": "module"`.
-
-Run `npm run build` after. Report any errors.
-
-◀ END ───────────────────────────────────────────────────────────────────────
-
-
----
-
-## PROMPT 4 — ConfirmationPage + final polish
-▶ START ─────────────────────────────────────────────────────────────────────
-
-Read CLAUDE.md.
-
-1. Create `src/components/ConfirmationPage.jsx`:
-   - Props: `{ submission }` which includes: name, email, service, date, time, bookingId
-   - Large checkmark icon (inline SVG) in a circle with `primaryColor` tint background
-   - Heading: "You're on the list!"
-   - Paragraph: `companyConfig.confirmationMessage`
-   - White card showing booking summary: formatted date (e.g. "Monday, 14 July 2025"), time, service, location with link if `companyConfig.locationUrl` exists, booking reference in monospace
-   - Small text below: "A confirmation email has been sent to {email}"
-   - Logo at bottom at 50% opacity
-
-2. Polish `src/index.css`:
-   - Make sure `.input` has a smooth `border-color` and `box-shadow` focus transition
-   - Focus ring uses `color-mix(in srgb, var(--color-primary) 15%, transparent)`
-   - `select.input` has a custom SVG chevron arrow via `background-image`
-   - All transitions use `0.15s ease`
-
-3. Update `index.html`:
-   - Title: use `companyConfig.tagline` (hint: set it dynamically in App.jsx via `document.title`)
-   - Add Google Fonts preconnect + Inter font link
-
-4. Add a `public/` folder note in CLAUDE.md: tell future sessions that `logo.png` goes in `/public/` and the form auto-hides the img tag if 404
-
-5. Run `npm run build` — confirm clean. Open `dist/index.html` and confirm it references the hashed JS and CSS bundles correctly.
-
-Report final dist sizes.
-
-◀ END ───────────────────────────────────────────────────────────────────────
-
-
----
-
-## PROMPT 5 — Tests + deploy prep
-▶ START ─────────────────────────────────────────────────────────────────────
-
-Read CLAUDE.md.
-
-1. Install Playwright:
-   ```
-   npm install -D @playwright/test
-   npx playwright install chromium
-   ```
-
-2. Create `playwright.config.js`:
-   - baseURL: `http://localhost:8888` (netlify dev port)
-   - single project: chromium
-   - testDir: `./tests`
-
-3. Create `tests/booking.spec.js` with these tests:
-
-   **Test 1 — Page loads**: visits `/`, checks for the tagline text from companyConfig
-
-   **Test 2 — Step 0 validation**: Continue button is disabled with empty name/email. Fill name + email → Continue becomes enabled.
-
-   **Test 3 — Step navigation**: Fill step 0 → click Continue → step 1 heading is visible. Click Back → step 0 heading is visible again.
-
-   **Test 4 — Service dropdown**: On step 1, the service dropdown contains all options from companyConfig.services
-
-   **Test 5 — Time slot picker**: Clicking a time slot pill marks it as selected (check border color or aria state)
-
-   **Test 6 — Step 1 validation**: Continue disabled until service + date + time all selected
-
-   **Test 7 — Full form flow (mock submit)**: Fill all 3 steps. Intercept the POST to `/.netlify/functions/submit-booking` and return `{ success: true, bookingId: 'test-123' }`. Click "Request booking". Confirmation page appears with "You're on the list!".
-
-   **Test 8 — Error state**: Intercept the function call and return status 500 with `{ error: 'Server error' }`. Submit form. Error message appears in red.
-
-   **Test 9 — Confirmation page content**: After mocked success, confirm booking summary card shows the service and time that were selected.
-
-4. Create `DEPLOY.md`:
-   ```
-   # Deployment guide
-
-   ## Local testing
-   cp .env.example .env
-   # Fill in all values
-   npm install
-   cd netlify/functions && npm install && cd ../..
-   npx netlify dev
-   # Visit http://localhost:8888
-
-   ## Supabase setup
-   1. Create project at supabase.com
-   2. Go to SQL Editor → paste supabase-setup.sql → Run
-   3. Get URL + service_role key from Settings → API
-
-   ## Resend setup
-   1. Add and verify the client's domain at resend.com
-   2. Create an API key
-   3. Confirm noreply@theirdomain.com is a verified sender
-
-   ## Deploy to Netlify
-   1. Push to GitHub
-   2. Connect repo in Netlify dashboard
-   3. Build command: npm run build | Publish: dist | Functions: netlify/functions
-   4. Set all environment variables (from .env.example) in Site settings → Environment variables
-   5. Trigger redeploy
-
-   ## Per-client checklist
-   - [ ] companyConfig.js updated
-   - [ ] logo.png in /public
-   - [ ] supabase-setup.sql run
-   - [ ] Resend domain verified
-   - [ ] All env vars set in Netlify
-   - [ ] Test booking submitted
-   - [ ] Both emails received
-   - [ ] Supabase row confirmed
-   ```
-
-5. Run `npm run build` one final time. Confirm clean. Report dist sizes.
-
-◀ END ───────────────────────────────────────────────────────────────────────
-
-
----
-
-## PROMPT C — Client customization
-## Run this for every new customer. Replace everything in [BRACKETS] first.
-## Turn off Claude Code bypass permissions when running this prompt.
-▶ START ─────────────────────────────────────────────────────────────────────
-
-Read CLAUDE.md. Modify ONLY `src/companyConfig.js`. Do not touch any other file.
-
-**Company:**
-- name: [COMPANY NAME]
-- tagline: [TAGLINE e.g. "Book your cleaning service"]
-- logo: /logo.png (remind me to drop the file into /public)
-- primaryColor: [HEX]
-- accentColor: [HEX]
-
-**Contact:**
-- ownerEmail: [OWNER EMAIL]
-- ownerName: [OWNER FIRST NAME]
-- replyToEmail: [VERIFIED RESEND SENDER e.g. noreply@theirdomain.com]
-
-**Services (one per line):**
-[SERVICE 1]
-[SERVICE 2]
-[SERVICE 3]
-
-**Time slots (one per line):**
-[SLOT 1 e.g. "9:00 am"]
-[SLOT 2]
-
-**Intake fields:**
-[Describe what info this business needs from clients before a session — e.g. "property size (small/medium/large), number of bedrooms, any pets?, special requests". I'll convert these into the correct field config.]
-
-**Location:**
-- location: [LOCATION NAME]
-- locationUrl: [GOOGLE MAPS LINK or leave blank]
-
-**Confirmation message:**
-[What the client should see after submitting — e.g. "Thanks! We'll confirm your booking within 2 hours."]
-
-After updating companyConfig.js, run `npm run build` to confirm no errors.
-List every changed value back to me so I can verify.
-
-Also remind me to update these Netlify environment variables:
-OWNER_EMAIL, OWNER_NAME, COMPANY_NAME, REPLY_TO_EMAIL, PRIMARY_COLOR
-
-◀ END ───────────────────────────────────────────────────────────────────────
-
-
----
-
-## WORKFLOW SUMMARY
-
-1. Create a new folder `smart-booking` → copy `CLAUDE.md`, `.claude/settings.json`, `PROMPTS.md` into it → open in VS Code
-2. Run Prompts 1 → 2 → 3 → 4 → 5 in order (one at a time, wait for each to finish)
-3. Add your `.env` values, run `npx netlify dev`, test the full flow
-4. For every new client: run Prompt C with their details → update Netlify env vars → redeploy
-5. Build time per new client after first: ~20 minutes Claude Code + 5 minutes Netlify
+## PER-CLIENT REUSE (after the first build)
+
+For each new client you sell the booking tool to:
+1. White-label `companyConfig.js` (brandName, services, intake fields, primaryColor) — the dashboard auto-themes to their accent.
+2. Set a unique `ADMIN_PASSWORD` for them in their Netlify site.
+3. Deploy. Their dashboard lives at `their-site.netlify.app/admin`.
+4. Hand them the `/admin` link + password. That's the product.
 
 ---
 
 ## CONTEXT HANDOFF PROMPT
-## Use this if you start a new chat mid-build to bring Claude up to speed.
-▶ START ─────────────────────────────────────────────────────────────────────
+Use this if you start a fresh Claude Code chat mid-build.
 
-I'm building a Smart Booking + Intake Form tool using Claude Code in VS Code. This is a white-label booking tool for service businesses — React + Vite + Tailwind frontend, Netlify Functions backend, Supabase for storage, Resend for emails. No AI API calls.
+```
+I'm adding an admin dashboard to my existing auto-booking project (React + Vite + Tailwind, Netlify Functions, Supabase bookings table, Resend emails). The dashboard lives at /admin, is password-gated via two Netlify functions (admin-bookings.js, admin-update.js) that check process.env.ADMIN_PASSWORD, and lets the owner view/search/filter bookings and Confirm/Cancel them. The look follows DESIGN-BRIEF.md (calm, Apple/Stripe-grade, frosted sticky bar as the signature, accent pulled from companyConfig.primaryColor).
 
-Here's where I am:
-- Prompts completed so far: [LIST WHICH ONES e.g. P1, P2]
+Where I am:
+- Prompts completed: [LIST e.g. P1, P2]
 - Current issue / next step: [DESCRIBE]
-- Last `npm run build` result: [PASTE OUTPUT]
+- Last npm run build result: [PASTE]
 
-Read CLAUDE.md and continue from where I left off.
-
-◀ END ───────────────────────────────────────────────────────────────────────
+Read CLAUDE.md and DESIGN-BRIEF.md and continue from where I left off.
+```

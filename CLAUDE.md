@@ -1,143 +1,116 @@
-# CLAUDE.md — Smart Booking + Intake Form
+# CLAUDE.md — Admin Dashboard for Smart Booking
 
-Read this file at the start of every session. Follow it exactly.
-
----
-
-## What this project is
-
-A white-label booking and intake form tool for service businesses. A client lands on a page, fills in their details, picks a time slot, answers intake questions, and submits. Three things happen automatically:
-
-1. The booking is saved to Supabase
-2. The client gets a confirmation email via Resend
-3. The business owner gets an alert email via Resend
-
-This is sold as: one-time install fee + monthly subscription. The codebase never changes between clients — only `src/companyConfig.js` and environment variables change.
+Read this file at the start of every session. Follow it exactly. Do not skip steps.
 
 ---
 
-## Tech stack
+## What we are building
 
+An **owner/admin dashboard** that gets added to the EXISTING `auto-booking` project. It lets the business owner log in with a password and see, search, and manage every booking that comes through the booking form. No Supabase login, no Netlify login — they open one clean URL, type a password, and manage their bookings.
+
+This is the piece that makes the booking tool actually sellable. Without it, bookings just sit in a database the owner can't see.
+
+### The three things the dashboard must do
+1. **Show every booking** — pulled live from Supabase, newest first.
+2. **Let the owner change a booking's status** — Confirm or Cancel, with the change saved instantly.
+3. **Let the owner find a booking fast** — search by name/email, filter by status, see this-week stats at a glance.
+
+---
+
+## Where this fits — DO NOT rebuild the project
+
+This is an ADDITION to the existing `auto-booking` repo. The booking form, the Supabase `bookings` table, the `submit-booking.js` function, and `companyConfig.js` already exist and work. Do not touch the booking form flow. Only ADD the admin pieces described in PROMPTS.md.
+
+### Existing stack (already in place — match it exactly)
 - **React 18 + Vite + Tailwind CSS v3** — frontend
-- **Netlify Functions** — secure backend proxy (API keys never touch the frontend)
-- **Supabase** — stores every booking row
-- **Resend** — sends both emails (client confirmation + owner alert)
-- **No AI API** — this tool has zero AI costs. Do not add Claude or OpenAI calls.
+- **Netlify Functions** — secure backend (Supabase service key lives ONLY here, never frontend)
+- **Supabase** — the `bookings` table already exists
+- **react-router-dom** — may need installing if not present; the admin lives at `/admin`
+
+### The existing `bookings` table columns
+```
+id              uuid (primary key)
+name            text
+email           text
+phone           text
+service         text
+requested_date  date
+requested_time  text
+intake_data     jsonb
+notes           text
+status          text   ('pending' | 'confirmed' | 'cancelled')
+created_at      timestamptz
+```
 
 ---
 
-## Project structure
+## Security model — read this carefully, it is the most important part
 
-```
-smart-booking/
-├── src/
-│   ├── companyConfig.js          ← ONLY file changed per customer
-│   ├── App.jsx                   ← injects CSS vars, handles step state
-│   ├── main.jsx
-│   ├── index.css                 ← .input and .btn-primary use CSS vars
-│   └── components/
-│       ├── BookingForm.jsx       ← 3-step form, reads config dynamically
-│       ├── IntakeField.jsx       ← renders text/select/radio/checkbox/textarea
-│       └── ConfirmationPage.jsx  ← shown after successful submit
-├── netlify/
-│   └── functions/
-│       ├── submit-booking.js     ← saves to Supabase + fires both Resend emails
-│       └── package.json          ← supabase-js + resend deps for functions
-├── public/
-│   └── logo.png                  ← per-customer logo, referenced by companyConfig.logo
-├── supabase-setup.sql            ← run once in Supabase SQL editor
-├── netlify.toml
-├── .env.example
-├── CLAUDE.md                     ← this file
-└── PROMPTS.md                    ← sequential build prompts
-```
+The Supabase **service role key** must NEVER appear in frontend code. It already lives safely inside Netlify Functions. The dashboard follows the same rule.
+
+- The frontend NEVER talks to Supabase directly.
+- The frontend calls two NEW Netlify Functions: `admin-bookings.js` (read) and `admin-update.js` (write).
+- Every admin function checks a password against `process.env.ADMIN_PASSWORD` before doing anything. Wrong password → 401, return nothing.
+- The password is sent in the request body over HTTPS, never stored in the URL.
+- The frontend keeps the password only in React state + `sessionStorage` (cleared when the tab closes), never in code.
+
+This is not bank-grade auth and does not need to be — it is a single-owner gate for a small business tool. But the service key staying server-side is non-negotiable.
 
 ---
 
 ## Non-negotiable rules
-
-1. **Never hardcode API keys** — always from `process.env.*` in functions, never in frontend code
-2. **Never change component structure to add AI** — this tool has no AI features
-3. **The white-label layer is `companyConfig.js` only** — all per-customer changes go there
-4. **`intake_data` in Supabase is jsonb** — dynamic fields dump into one column, schema never changes
-5. **Always use `netlify dev` to test locally** — not `npm run dev`. Only `netlify dev` loads the Netlify Functions and `.env` into the function runtime
-6. **Run `npm run build` after every prompt** — confirm zero errors before moving on
-7. **Functions have their own `package.json`** — after installing in root, also `cd netlify/functions && npm install`
+1. **Never put the Supabase service key or the admin password in frontend code.** Functions read them from `process.env.*`.
+2. **Do not modify the existing booking form or `submit-booking.js`.** Add, don't edit.
+3. **The white-label layer stays `companyConfig.js`.** The dashboard pulls the brand name and accent colour from there so it auto-brands per client.
+4. **Match the existing code style** — same React patterns, same Tailwind setup, same function structure as `submit-booking.js`.
+5. **After every prompt, run `npm run build` and confirm zero errors before moving on.**
+6. **One prompt at a time. Wait for it to finish. Test. Then continue.**
 
 ---
 
-## companyConfig.js — the white-label layer
-
-This is the ONLY file that changes between customer installs. It controls:
-
-- `name`, `tagline`, `logo`, `primaryColor`, `accentColor` — branding
-- `ownerEmail`, `ownerName`, `replyToEmail` — where emails go
-- `services[]` — dropdown options for service type
-- `timeSlots[]` — available time picker options
-- `intakeFields[]` — dynamic form fields (text/textarea/select/radio/checkbox)
-- `confirmationMessage` — what the client sees after submitting
-- `location`, `locationUrl` — shown on confirmation page
-
-**Logo**: drop `logo.png` into `/public/` — it's served at `/logo.png`, matching the default `companyConfig.logo` value. `BookingForm` and `ConfirmationPage` both render `<img src={companyConfig.logo}>` with an `onError` handler that hides the tag entirely if the file is missing (404), so the layout doesn't break for clients without a logo yet.
-
----
-
-## Intake field types
-
-| type | renders as |
-|------|-----------|
-| `text` | single-line input |
-| `textarea` | multi-line input |
-| `select` | dropdown |
-| `radio` | pill button group (single select) |
-| `checkbox` | checkbox list (multi-select) |
-
-Each field: `{ id, label, type, required, placeholder?, options? }`
-
----
-
-## Supabase table: bookings
-
-| column | type | notes |
-|--------|------|-------|
-| id | uuid | auto pk |
-| name | text | required |
-| email | text | required |
-| phone | text | optional |
-| service | text | from services[] |
-| requested_date | date | |
-| requested_time | text | from timeSlots[] |
-| intake_data | jsonb | all dynamic fields |
-| notes | text | free text |
-| status | text | pending / confirmed / cancelled |
-| created_at | timestamptz | auto |
-
----
-
-## Environment variables
-
-Set in `.env` for local dev. Set in Netlify dashboard for production.
-
+## New file structure this kit adds
 ```
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
-RESEND_API_KEY=
-OWNER_EMAIL=
-OWNER_NAME=
-COMPANY_NAME=
-REPLY_TO_EMAIL=
-PRIMARY_COLOR=
+auto-booking/
+├── src/
+│   ├── admin/
+│   │   ├── AdminApp.jsx          ← route guard + password gate + layout
+│   │   ├── LoginGate.jsx         ← the frosted password screen
+│   │   ├── Dashboard.jsx         ← stats row + bookings table/list
+│   │   ├── BookingCard.jsx       ← one booking, expandable, with actions
+│   │   ├── StatusPill.jsx        ← colour-coded status chip
+│   │   └── adminTheme.js         ← reads companyConfig, exposes accent tokens
+│   └── (existing files untouched)
+├── netlify/functions/
+│   ├── admin-bookings.js         ← NEW: password-gated read
+│   ├── admin-update.js           ← NEW: password-gated status update
+│   └── (existing submit-booking.js untouched)
+└── DESIGN-BRIEF.md               ← the look + feel spec (follow it exactly)
 ```
 
 ---
 
-## Current status
+## The look: read DESIGN-BRIEF.md before writing any UI
 
-Track which prompts have been completed:
+The owner judges whether this is "real software" in the first two seconds of seeing it. It must look like it was made by a serious product studio. `DESIGN-BRIEF.md` in this kit is the exact spec — palette, type, spacing, motion, the signature element. Follow it. When you build any screen, take a screenshot, compare it against the brief, and refine until it matches. Do at least two refinement passes on the dashboard before calling it done.
 
-- [x] P1 — Scaffold + config
-- [x] P2 — BookingForm (3-step UI)
-- [x] P3 — Netlify Function (Supabase + Resend)
-- [x] P4 — ConfirmationPage + polish
-- [x] P5 — Tests + deploy prep
-- [ ] PC — Client customization (run per customer)
+---
+
+## Environment variables this kit adds (set in Netlify + local .env)
+```
+ADMIN_PASSWORD=            ← the owner's dashboard password (you set this per client)
+```
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` already exist from the booking tool — the admin functions reuse them.
+
+---
+
+## Definition of done
+- [ ] `/admin` shows a branded password screen
+- [ ] Correct password loads the dashboard; wrong password is rejected
+- [ ] All bookings load, newest first, with live data
+- [ ] Search by name/email works
+- [ ] Filter by status (All / Pending / Confirmed / Cancelled) works
+- [ ] Confirm and Cancel buttons update the booking and the change persists on refresh
+- [ ] Stats row shows total, pending, and this-week counts
+- [ ] The UI matches DESIGN-BRIEF.md and looks genuinely high-end
+- [ ] `npm run build` passes with zero errors
+- [ ] Deployed to Netlify with `ADMIN_PASSWORD` set

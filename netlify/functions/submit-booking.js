@@ -142,7 +142,7 @@ export const handler = async (event) => {
 
   await Promise.all([
     resend.emails.send({
-      from: `${process.env.COMPANY_NAME} <onboarding@resend.dev>`,
+      from: `DropStack <bookings@dropstack.co>`,
       to: email,
       replyTo: process.env.OWNER_EMAIL,
       subject: `Your booking request — ${process.env.COMPANY_NAME}`,
