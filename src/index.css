@@ -48,3 +48,48 @@ select.input {
 .border-brand {
   border-color: var(--color-primary);
 }
+
+/* Admin dashboard motion — subtle fade+rise on first paint, staggered inline. */
+@keyframes adminRise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.admin-rise {
+  animation: adminRise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes adminPulse {
+  0% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.admin-skeleton {
+  animation: adminPulse 1s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-rise,
+  .admin-skeleton {
+    animation: none !important;
+  }
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
