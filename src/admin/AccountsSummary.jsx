@@ -5,14 +5,13 @@ import { formatKyd, formatUsd } from './payments'
 function MoneyCard({ label, amount, accent, delay }) {
   return (
     <div
-      className="admin-rise"
+      className="admin-rise accounts-summary-card"
       style={{
         animationDelay: `${delay}ms`,
         background: tokens.surface,
         border: `1px solid ${tokens.hairline}`,
         borderRadius: tokens.radiusCard,
         boxShadow: tokens.shadow,
-        padding: '20px 24px',
       }}
     >
       <div
@@ -22,9 +21,9 @@ function MoneyCard({ label, amount, accent, delay }) {
         {label}
       </div>
       <div
+        className="accounts-summary-value"
         style={{
           marginTop: '8px',
-          fontSize: '26px',
           lineHeight: 1.1,
           fontWeight: 600,
           letterSpacing: '-0.03em',
