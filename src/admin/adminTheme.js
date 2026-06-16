@@ -29,4 +29,7 @@ export const statusColors = {
   pending: { ink: '#B7791F', wash: '#FEF6E7', label: 'Pending' },
   confirmed: { ink: '#1A7F5A', wash: '#E7F5EE', label: 'Confirmed' },
   cancelled: { ink: '#8A8A8E', wash: '#F2F2F4', label: 'Cancelled' },
+  // Payment statuses reuse the same inks: Paid = green, Unpaid = amber.
+  paid: { ink: '#1A7F5A', wash: '#E7F5EE', label: 'Paid' },
+  unpaid: { ink: '#B7791F', wash: '#FEF6E7', label: 'Unpaid' },
 }

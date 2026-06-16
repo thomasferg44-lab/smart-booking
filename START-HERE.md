@@ -1,43 +1,56 @@
-# START HERE — Admin Dashboard build
+# START HERE — Payment Tracking Feature
 
-You're adding an owner dashboard to your existing **auto-booking** project. When you open your laptop:
+Adding payment tracking to the existing `auto-booking` project. When done, the owner sees every booking's price, can mark payments as received, and has a live accounts view showing what's owed vs paid.
 
-## 1. Drop these 4 files into the auto-booking project root
-- `CLAUDE.md`  ← if the project already has one for the booking tool, rename this to `CLAUDE-dashboard.md` and tell Claude Code to read it, OR replace the old one (the booking tool is already built, so replacing is fine).
-- `DESIGN-BRIEF.md`
-- `PROMPTS.md`
-- `supabase-admin-setup.sql`
+## Before you open Claude Code
 
-## 2. Run the SQL once
-Open Supabase → SQL Editor → paste `supabase-admin-setup.sql` → Run. This makes sure the `status` column and indexes exist. Safe to run even if they already do.
+**Run the SQL first:**
+1. Go to supabase.com → your project → SQL Editor
+2. Paste the contents of `supabase-payments-setup.sql`
+3. Hit Run — should return 4 rows confirming the new columns
 
-## 3. Open the project in Claude Code
+**Then drop these files into `~/auto-booking/`:**
+```
+cp ~/Downloads/payments-kit/CLAUDE.md ~/auto-booking/CLAUDE.md
+cp ~/Downloads/payments-kit/PROMPTS.md ~/auto-booking/PROMPTS.md
+cp ~/Downloads/payments-kit/supabase-payments-setup.sql ~/auto-booking/
+```
+(This overwrites the dashboard CLAUDE.md — that build is done, it's fine.)
+
+## Open Claude Code
 ```
 cd ~/auto-booking
 claude
 ```
-Tell it: **"Read CLAUDE.md and DESIGN-BRIEF.md, then we're running the prompts in PROMPTS.md one at a time."**
+Tell it: "Read CLAUDE.md, then we run PROMPTS.md one at a time."
 
-## 4. Run PROMPTS.md in order
-P1 → P2 → P3 → P4 → P5. One at a time. After each: `npm run build`, confirm zero errors, test, then continue. Don't rush P4 — that's the design polish pass that makes it look expensive.
+## Run P1 → P5 in order
+- P1: prices in companyConfig + server-side price on submit
+- P2: price badge on booking form
+- P3: admin-pay Netlify function + receipt email
+- P4: Accounts tab UI (summary, filters, mark-as-paid modal)
+- P5: end-to-end test + deploy
 
-## 5. What "done" looks like
-- `your-site.netlify.app/admin` → branded password screen
-- Right password → calm, frosted, high-end dashboard of all bookings
-- Search, status filter, Confirm/Cancel all working and persisting
-- Flawless on your phone
+## What "done" looks like
+- Client sees "KYD $75.00 (USD $61.50)" when they pick a service
+- Owner opens /admin → Accounts tab → sees every booking with its price
+- Summary: Total Owed / Paid / Outstanding in KYD + USD
+- One click to mark paid → modal for date + method → receipt lands in client's inbox
+- Supabase has payment_status, payment_date, payment_method on every row
 
-## Remember the security rule
-The Supabase service key and the admin password live ONLY in Netlify env vars and the functions. They never go in frontend code. The kit is built around this — don't let any prompt put them in the React app.
-
-## After it's built
-Each new client: white-label `companyConfig.js`, set their own `ADMIN_PASSWORD` in their Netlify site, deploy, hand them the `/admin` link + password. That link IS the product.
+## After this is done — Prompt C for Cayman AquaLife
+Once the payment feature is built, run Prompt C to white-label the whole tool
+for your dad's business: his logo, teal/gold colors, his actual lesson types
+and real prices, his email, his admin password. That session takes ~20 minutes
+and produces a separate deployed site just for him.
 
 ---
 
-### Where we left off on the broader project (so you don't lose the thread)
-- **Lesson Recap tool** — LIVE at fanciful-macaron-d5bbdd.netlify.app. Logo still to add.
-- **Booking tool** — form + Supabase + owner email working. Customer confirmation email is BLOCKED until the domain is verified in Resend.
-- **Domain** — bought `dropstack.co`. Cloudflare nameservers being set (houston/meg.ns.cloudflare.com) on Namecheap. NEXT after nameservers propagate: verify dropstack.co in Resend, set up thomas@dropstack.co email forwarding, then build the dropstack.co website.
-- **This kit** — the booking tool's missing admin dashboard.
-- **Tuesday morning** — send the 7 WhatsApp messages to the Cayman prospects.
+## Full project status
+- ✅ Lesson Recap — live
+- ✅ Smart Booking — live, admin dashboard working
+- ✅ Invoice Generator — live
+- ✅ DropStack website — live at dropstack.co
+- 🔨 Payment tracking — this kit
+- ⏳ Prompt C for Cayman AquaLife — after payment feature
+- 📋 WhatsApp outreach to 7 Cayman prospects — whenever you're ready

@@ -1,179 +1,246 @@
-# PROMPTS.md — Build the Admin Dashboard
+# PROMPTS.md — Payment Tracking Feature
 
-Run these in order, ONE at a time, inside the existing `auto-booking` project in Claude Code. After each prompt: let it finish, run `npm run build`, confirm zero errors, then move to the next. Don't paste the next prompt until the current one is done.
+Run in the existing `auto-booking` project in Claude Code. One prompt at a time. After each: `npm run build`, confirm zero errors, test, then continue.
 
-Before Prompt 1, make sure Claude Code has read `CLAUDE.md` and `DESIGN-BRIEF.md` in this project.
-
----
-
-## PROMPT 1 — Backend: the two password-gated functions
-
-```
-Read CLAUDE.md and DESIGN-BRIEF.md fully before starting.
-
-Build the two new Netlify Functions that power the admin dashboard. Do NOT touch submit-booking.js or any existing file.
-
-Create netlify/functions/admin-bookings.js:
-- Handler accepts POST only (else 405).
-- Parse JSON body; expect { password }.
-- If password !== process.env.ADMIN_PASSWORD, return 401 with { error: "Unauthorized" } and nothing else.
-- Reuse the same Supabase client pattern as submit-booking.js, using process.env.SUPABASE_URL and process.env.SUPABASE_SERVICE_ROLE_KEY.
-- Query the bookings table, select all columns, order by created_at descending.
-- Return 200 with { bookings: [...] }.
-- Wrap in try/catch, log errors server-side, return 500 with a generic message on failure.
-
-Create netlify/functions/admin-update.js:
-- Handler accepts POST only (else 405).
-- Parse JSON body; expect { password, id, status }.
-- Validate password against process.env.ADMIN_PASSWORD (401 if wrong).
-- Validate status is one of: "confirmed", "cancelled", "pending" (400 if not).
-- Validate id is present (400 if not).
-- Update the matching bookings row's status; return 200 with { success: true }.
-- try/catch with generic 500 on failure.
-
-Both functions must never expose the service key or password in any response.
-
-Add ADMIN_PASSWORD to .env.example with a placeholder.
-
-Run npm run build and confirm zero errors. List the two files you created and confirm submit-booking.js was not modified.
-```
+Read CLAUDE.md fully before Prompt 1.
 
 ---
 
-## PROMPT 2 — Routing + the password gate
+## PROMPT 1 — Database + companyConfig prices
 
 ```
-Read CLAUDE.md and DESIGN-BRIEF.md.
+Read CLAUDE.md fully before starting.
 
-Set up the admin route and login gate. The booking form stays exactly as is.
+We are adding payment tracking to the existing auto-booking project.
+Do NOT touch submit-booking.js, the booking form flow, or any existing admin files yet.
 
-1. If react-router-dom is not installed, install it. Wire the app so:
-   - "/" renders the existing booking form (unchanged).
-   - "/admin" renders the new admin experience.
-   Keep the existing netlify.toml SPA redirect (/* -> /index.html) so /admin resolves.
+Step 1: Update companyConfig.js
+Add a `price` field (in KYD) to every service in the services array. Use these
+realistic Cayman swim school prices as defaults — the owner will adjust them
+later via Prompt C:
+- "Private lesson (1hr)" → 75.00
+- "Stroke assessment (30min)" → 45.00
+- "Group lesson (1hr)" → 40.00
+- "Open water session (1hr)" → 65.00
+If companyConfig has different services, add price: 0.00 as a placeholder and
+note which ones need real values.
 
-2. Create src/admin/adminTheme.js:
-   - Import companyConfig.
-   - Export { brandName, accent } where accent = companyConfig.primaryColor || "#21B7B5".
-   - Export an accentWash helper (accent at ~10% opacity) for soft fills.
+The services array should now look like:
+{ name: "Private lesson (1hr)", price: 75.00 }
 
-3. Create src/admin/LoginGate.jsx following DESIGN-BRIEF.md:
-   - A centred, calm password screen on the --canvas background.
-   - Branded with brandName from adminTheme.
-   - One password input (type=password) + one "Enter" button using the accent.
-   - On submit, call admin-bookings with { password }. If 200, lift the password up to the parent and store it in sessionStorage under "admin_pw". If 401, show the message "That password didn't match." inline, no alert boxes.
-   - Frosted, premium, minimal. Inter font, tight tracking per the brief.
+Step 2: Update submit-booking.js (the ONE exception to "don't touch it")
+When a booking is submitted, look up the price for the selected service from
+the request body's service field — but the price must come from a server-side
+prices map, NOT from the frontend (clients must not be able to send their own
+price). In submit-booking.js, hardcode a PRICES object that mirrors
+companyConfig's prices:
+const PRICES = {
+  "Private lesson (1hr)": 75.00,
+  "Stroke assessment (30min)": 45.00,
+  // etc.
+}
+Then when inserting to Supabase, add:
+price_kyd: PRICES[service] ?? 0.00
 
-4. Create src/admin/AdminApp.jsx:
-   - On mount, read sessionStorage "admin_pw". If present, try loading bookings; if it works, go straight to the dashboard (skip the gate).
-   - If no valid password, show LoginGate.
-   - Once authenticated, render <Dashboard password={pw} /> (Dashboard comes next prompt — for now render a placeholder that says "Authenticated").
+This ensures the price is always set server-side. If the service isn't in PRICES,
+it defaults to 0.00 and the owner can set it manually in the dashboard.
 
-Load the Inter font (Google Fonts) globally.
-
-Run npm run build, confirm zero errors. Confirm "/" still shows the booking form untouched.
+Run npm run build. Confirm zero errors. List exactly what you changed in
+companyConfig.js and submit-booking.js.
 ```
 
 ---
 
-## PROMPT 3 — The dashboard: stats, frosted bar, bookings list
+## PROMPT 2 — Price badge on booking form
 
 ```
-Read CLAUDE.md and DESIGN-BRIEF.md again before building UI. Follow the brief's tokens, type scale, spacing, and the frosted-bar signature element exactly.
+Read CLAUDE.md.
 
-Build src/admin/Dashboard.jsx and its child components. Use the password prop to call admin-bookings on mount and load all bookings into state.
+Add a price display to the booking form so clients see what they'll pay
+before submitting. This is read-only — clients cannot change the price.
 
-Components to create:
+Create src/components/PriceBadge.jsx:
+- Props: service (string), services (array from companyConfig)
+- Looks up the price for the selected service
+- Displays: "KYD $75.00 (USD $61.50)" using a fixed rate of 1 KYD = 0.82 USD
+- If no service selected or price is 0, shows nothing
+- Styled calmly — a small pill or inline text matching the existing form style
+- Not a separate step, just appears on step 1 below or next to the service
+  dropdown as soon as a service is selected
 
-src/admin/StatusPill.jsx
-- Props: status. Renders a colour-coded pill per the brief's status colours (pending/confirmed/cancelled inks on their washes). Rounded 999px, 11px tracked label.
+Wire PriceBadge into the existing step 1 of the booking form (the service
+selection step). Import companyConfig.services and pass them through.
 
-src/admin/BookingCard.jsx
-- Props: booking, onUpdate.
-- A surface card with hairline border and the soft shadow from the brief.
-- Top line: name (600) + service · formatted date · time on the right.
-- Second line: email in --ink-soft + a StatusPill.
-- Tap/click to expand: reveal intake_data as clean label/value rows (format snake_case keys to Title Case) plus notes if present.
-- Action buttons: "Confirm" and "Cancel". Only show "Confirm" if not already confirmed; only show "Cancel" if not already cancelled. On click, call onUpdate(id, status). While the request is in flight, disable the buttons.
-- When status changes, animate the pill colour with a soft spring and settle the card (respect prefers-reduced-motion).
+Run npm run build. Open localhost:8888, select a service on step 1 and confirm
+the price appears correctly in both KYD and USD. Screenshot and show me.
+```
 
-src/admin/Dashboard.jsx
-- The frosted sticky command bar (signature element): backdrop-blur, translucent white, hairline bottom border. Inside: brandName on the left; a rounded search field; a segmented status filter (All / Pending / Confirmed / Cancelled).
-- Below the bar: an eyebrow "BOOKINGS" + today's date on the right.
-- A stats row of three cards: Total, Pending (uses accent), This Week (created_at within last 7 days). Big tabular numbers per the brief.
-- The bookings list, newest first, filtered by the search text (name or email, case-insensitive) and the active status filter.
-- onUpdate handler calls admin-update with { password, id, status }, then optimistically updates local state and shows a toast ("Booking confirmed." / "Booking cancelled.").
-- Loading state: a quiet skeleton of ~4 rows, not a spinner.
-- Empty state per the brief's copy.
-- Fully responsive: flawless at 390px wide. Stat cards scroll/stack, frosted bar collapses search into an icon on mobile.
+---
+
+## PROMPT 3 — admin-pay Netlify function
+
+```
+Read CLAUDE.md.
+
+Create netlify/functions/admin-pay.js — a new password-gated function that:
+1. Accepts POST only (405 otherwise).
+2. Parses body: { password, bookingId, paymentDate, paymentMethod }.
+3. Validates password against process.env.ADMIN_PASSWORD (401 if wrong).
+4. Validates bookingId is present (400 if missing).
+5. Validates paymentMethod is one of: 'cash', 'bank_transfer', 'other' (400 if not).
+6. Validates paymentDate is a valid date string (400 if not).
+7. Updates the bookings row:
+   payment_status = 'paid'
+   payment_date = paymentDate
+   payment_method = paymentMethod
+   Also selects back: name, email, service, requested_date, requested_time,
+   price_kyd, booking reference (id).
+8. Sends a receipt email via Resend to the client's email address:
+   - From: bookings@dropstack.co (or process.env.REPLY_TO_EMAIL)
+   - Subject: "Payment received — [service]"
+   - Branded HTML email (match the style of existing emails in submit-booking.js)
+   - Shows: student name, service, lesson date + time, amount paid KYD + USD
+     (1 KYD = 0.82 USD), payment method (human-readable: "Bank transfer" not
+     "bank_transfer"), booking reference, thank you message.
+9. Returns 200 { success: true } on completion.
+10. try/catch with generic 500 on failure.
+
+Do NOT put the Supabase service key or Resend key in frontend code.
+Do NOT modify any existing functions.
 
 Run npm run build, confirm zero errors.
 ```
 
 ---
 
-## PROMPT 4 — Design refinement pass (the loop)
+## PROMPT 4 — Accounts tab UI
 
 ```
-Read DESIGN-BRIEF.md once more. Now critique and refine the dashboard against it.
+Read CLAUDE.md and DESIGN-BRIEF.md (the admin dashboard design spec).
 
-Run the dev server, open /admin, log in, and take screenshots at desktop (1280px) and mobile (390px) widths. For each screen, work through the brief's self-critique checklist:
-- Does it look like one deliberate product, not an admin template?
-- Is the accent used in 3 or fewer places per screen?
-- Are all numbers tabular, labels tracked-out 11px uppercase?
-- Is the frosted bar genuinely frosted when content scrolls under it?
-- Is it flawless on a 390px phone?
-- What one thing can be removed?
+Add an Accounts tab to the existing /admin dashboard. The tab navigation
+sits at the top of the dashboard, below the frosted command bar:
+  [ Bookings ]  [ Accounts ]
+The active tab uses the accent colour underline. Switching tabs is instant
+(no page reload).
 
-Identify the 5 biggest gaps between what you built and the brief, fix them, screenshot again, and confirm each is resolved. Pay special attention to: tracking on large type, shadow softness, the frosted blur actually rendering, spacing consistency on the 8px grid, and the confirm-status spring animation feeling smooth.
+Create src/admin/AccountsSummary.jsx:
+- Three stat cards matching the existing dashboard stat card style:
+  "Total Owed" — sum of price_kyd for all unpaid bookings
+  "Paid" — sum of price_kyd for all paid bookings
+  "Outstanding" — same as Total Owed (unpaid)
+- Each card shows KYD primary, USD secondary in smaller text below
+- "Outstanding" card uses the accent colour for its number (matches the
+  Pending card pattern in the existing dashboard)
 
-Do at least two refinement rounds. Show me before/after notes on what you changed and why. Then run npm run build.
+Create src/admin/PaymentRow.jsx:
+- One booking in the accounts view
+- Shows: client name, service, lesson date, price in KYD + USD, payment status pill
+  (Paid = green, Unpaid = amber — matching StatusPill style)
+- If paid: also shows payment date and payment method (human-readable)
+- If unpaid: shows a "Mark as Paid" button (accent colour, small)
+- Clicking "Mark as Paid" opens PayModal
+
+Create src/admin/PayModal.jsx:
+- A clean modal overlay (blurred backdrop, centred card)
+- Title: "Record payment"
+- Shows booking summary: client name, service, amount (KYD + USD)
+- Two inputs:
+  1. Date received (date picker, defaults to today)
+  2. Payment method (select: Cash / Bank transfer / Other)
+- Two buttons: "Cancel" (grey) and "Confirm payment" (accent)
+- On confirm: calls admin-pay with { password, bookingId, paymentDate,
+  paymentMethod }, shows loading state, closes on success, shows toast
+  "Payment recorded. Receipt sent to [client email]."
+- On error: shows inline error, keeps modal open
+
+Create src/admin/AccountsTab.jsx:
+- Receives: bookings (array), password (string), onPaymentRecorded (callback)
+- Renders AccountsSummary at top
+- Two filters below summary (matching existing dashboard filter style):
+  1. Date range: "From" and "To" date inputs
+  2. Payment status: All / Paid / Outstanding (segmented control)
+- Filtered list of PaymentRows below
+- Empty state: "No bookings match these filters."
+- When a payment is recorded, calls onPaymentRecorded so the parent
+  refreshes the bookings from Supabase
+
+Wire AccountsTab into AdminApp.jsx alongside the existing Dashboard (Bookings tab).
+The accounts tab receives the same bookings data already loaded — no extra
+Supabase call needed.
+
+Run npm run build. Open /admin locally, click Accounts tab. Confirm:
+- Summary cards show correct totals from your test bookings
+- PaymentRows render for each booking
+- Filters work
+- PayModal opens on "Mark as Paid"
+
+Screenshot and show me.
 ```
 
 ---
 
-## PROMPT 5 — Local test + deploy
+## PROMPT 5 — Wire, test end-to-end, deploy
 
 ```
 Read CLAUDE.md.
 
-1. Add ADMIN_PASSWORD to my local .env with a test value.
-2. Run `npx netlify dev`. Walk me through testing end to end:
-   - / still shows the booking form and a test submission still works.
-   - /admin shows the gate; wrong password is rejected; correct password loads the dashboard.
-   - Bookings load newest first; search and status filter work.
-   - Confirm and Cancel update a booking and the change persists after refresh.
-   - Check it on a phone-width window.
-3. When local passes, give me the exact git commands to commit and push.
-4. Give me the exact list of what to set in Netlify:
-   - Add env var ADMIN_PASSWORD (the real password for this client).
-   - Confirm SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are already set.
-   - Trigger a deploy without cache.
-5. Tell me how to test the live /admin once deployed.
+End-to-end test checklist — run through each with netlify dev running:
+
+1. Submit a new test booking on / — confirm the price shows on step 1 and the
+   booking saves with the correct price_kyd in Supabase.
+
+2. Open /admin → Accounts tab — confirm the new booking appears as Unpaid
+   with the correct KYD + USD price.
+
+3. Summary cards show correct totals.
+
+4. Click "Mark as Paid" on the test booking — set date to today, method to
+   Bank transfer — confirm:
+   - Modal closes with toast "Payment recorded. Receipt sent to..."
+   - Row updates to Paid with date and method shown
+   - Summary cards update
+   - Check Supabase: payment_status = 'paid', payment_date and payment_method set
+   - Check your email: receipt arrived, looks correct, shows right amounts
+
+5. Date range filter: set a range that excludes the booking — confirm it
+   disappears. Expand range — confirm it reappears.
+
+6. Status filter: Outstanding → only unpaid. Paid → only paid.
+
+7. The existing Bookings tab still works: Confirm/Cancel still function,
+   no regressions.
+
+When all pass:
+git add .
+git commit -m "feat: payment tracking + accounts tab + receipt emails"
+git push
+
+Then:
+- Go to Netlify → booking site → Trigger deploy without cache
+- Test live: submit a booking, mark it paid, check receipt email
+- Confirm Supabase shows payment fields correctly
+
+Report any failures with the exact error and I'll fix before you commit.
 ```
-
----
-
-## PER-CLIENT REUSE (after the first build)
-
-For each new client you sell the booking tool to:
-1. White-label `companyConfig.js` (brandName, services, intake fields, primaryColor) — the dashboard auto-themes to their accent.
-2. Set a unique `ADMIN_PASSWORD` for them in their Netlify site.
-3. Deploy. Their dashboard lives at `their-site.netlify.app/admin`.
-4. Hand them the `/admin` link + password. That's the product.
 
 ---
 
 ## CONTEXT HANDOFF PROMPT
-Use this if you start a fresh Claude Code chat mid-build.
 
 ```
-I'm adding an admin dashboard to my existing auto-booking project (React + Vite + Tailwind, Netlify Functions, Supabase bookings table, Resend emails). The dashboard lives at /admin, is password-gated via two Netlify functions (admin-bookings.js, admin-update.js) that check process.env.ADMIN_PASSWORD, and lets the owner view/search/filter bookings and Confirm/Cancel them. The look follows DESIGN-BRIEF.md (calm, Apple/Stripe-grade, frosted sticky bar as the signature, accent pulled from companyConfig.primaryColor).
+I'm adding payment tracking to my auto-booking project (React + Vite + Tailwind,
+Netlify Functions, Supabase bookings table, Resend). The feature adds:
+- price_kyd to each service in companyConfig + server-side price lookup in submit-booking.js
+- PriceBadge on the booking form step 1
+- admin-pay.js Netlify function (password-gated, updates payment fields, sends receipt)
+- Accounts tab in /admin with AccountsSummary, PaymentRow, PayModal, AccountsTab
+- KYD primary + USD secondary (1 KYD = 0.82 USD fixed rate)
+- Date range + payment status filters
 
-Where I am:
-- Prompts completed: [LIST e.g. P1, P2]
-- Current issue / next step: [DESCRIBE]
-- Last npm run build result: [PASTE]
+Prompts done: [LIST]
+Current issue / next step: [DESCRIBE]
+Last npm run build: [PASTE]
 
-Read CLAUDE.md and DESIGN-BRIEF.md and continue from where I left off.
+Read CLAUDE.md and continue.
 ```

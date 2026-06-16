@@ -1,6 +1,15 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 
+// Server-side price map (KYD). Mirrors companyConfig.services prices.
+// Price is set here, NOT from the request body, so clients can't set their own.
+const PRICES = {
+  'Private lesson (1hr)': 75.00,
+  'Group session (1hr)': 40.00,
+  'Stroke assessment (30min)': 45.00,
+  'Junior squad trial': 0.00,
+}
+
 const formatLabel = (key) =>
   key
     .replace(/_/g, ' ')
@@ -96,6 +105,7 @@ export const handler = async (event) => {
       intake_data: intake,
       notes: notes || null,
       status: 'pending',
+      price_kyd: PRICES[service] ?? 0.00,
     })
     .select('id')
     .single()

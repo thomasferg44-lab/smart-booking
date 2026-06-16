@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import BookingCard from './BookingCard'
+import AccountsTab from './AccountsTab'
 import { brandName, tokens } from './adminTheme'
+
+const TABS = [
+  { key: 'bookings', label: 'Bookings' },
+  { key: 'accounts', label: 'Accounts' },
+]
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -114,33 +120,31 @@ export default function Dashboard({ password }) {
   const [filter, setFilter] = useState('all')
   const [searchOpen, setSearchOpen] = useState(false)
   const [toast, setToast] = useState(null)
+  const [activeTab, setActiveTab] = useState('bookings')
 
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await fetch('/.netlify/functions/admin-bookings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password }),
-        })
-        const data = await res.json()
-        if (cancelled) return
-        if (res.ok) {
-          setBookings(data.bookings || [])
-        } else {
-          setLoadError(true)
-        }
-      } catch {
-        if (!cancelled) setLoadError(true)
-      } finally {
-        if (!cancelled) setLoading(false)
+  const loadBookings = useCallback(async () => {
+    try {
+      const res = await fetch('/.netlify/functions/admin-bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setBookings(data.bookings || [])
+      } else {
+        setLoadError(true)
       }
-    })()
-    return () => {
-      cancelled = true
+    } catch {
+      setLoadError(true)
+    } finally {
+      setLoading(false)
     }
   }, [password])
+
+  useEffect(() => {
+    loadBookings()
+  }, [loadBookings])
 
   useEffect(() => {
     if (!toast) return
@@ -165,6 +169,11 @@ export default function Dashboard({ password }) {
       setBookings(prev)
       showToast('Could not save that. Try again.')
     }
+  }
+
+  const handlePaymentRecorded = (email) => {
+    loadBookings()
+    showToast(`Payment recorded. Receipt sent to ${email}.`)
   }
 
   const stats = useMemo(() => {
@@ -232,41 +241,76 @@ export default function Dashboard({ password }) {
               {brandName}
             </span>
 
-            {/* Desktop controls */}
-            <div className="hidden sm:flex items-center gap-3">
-              {searchInput(false)}
-              <Segmented value={filter} onChange={setFilter} />
-            </div>
+            {/* Desktop controls — bookings tab only */}
+            {activeTab === 'bookings' && (
+              <div className="hidden sm:flex items-center gap-3">
+                {searchInput(false)}
+                <Segmented value={filter} onChange={setFilter} />
+              </div>
+            )}
 
-            {/* Mobile search toggle */}
-            <button
-              className="sm:hidden flex items-center justify-center"
-              onClick={() => setSearchOpen((v) => !v)}
-              aria-label="Search"
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: tokens.radiusControl,
-                border: `1px solid ${tokens.hairline}`,
-                background: searchOpen ? '#F2F2F4' : tokens.surface,
-              }}
-            >
-              <SearchIcon />
-            </button>
+            {/* Mobile search toggle — bookings tab only */}
+            {activeTab === 'bookings' && (
+              <button
+                className="sm:hidden flex items-center justify-center"
+                onClick={() => setSearchOpen((v) => !v)}
+                aria-label="Search"
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: tokens.radiusControl,
+                  border: `1px solid ${tokens.hairline}`,
+                  background: searchOpen ? '#F2F2F4' : tokens.surface,
+                }}
+              >
+                <SearchIcon />
+              </button>
+            )}
           </div>
 
           {/* Mobile expanding search */}
-          {searchOpen && <div className="sm:hidden pb-3">{searchInput(true)}</div>}
+          {activeTab === 'bookings' && searchOpen && (
+            <div className="sm:hidden pb-3">{searchInput(true)}</div>
+          )}
 
           {/* Mobile segmented filter row */}
-          <div className="sm:hidden pb-3">
-            <Segmented value={filter} onChange={setFilter} />
-          </div>
+          {activeTab === 'bookings' && (
+            <div className="sm:hidden pb-3">
+              <Segmented value={filter} onChange={setFilter} />
+            </div>
+          )}
         </div>
       </header>
 
       <main className="mx-auto" style={{ maxWidth: 1080, padding: '0 20px 64px' }}>
-        {/* Eyebrow + date */}
+        {/* Tab navigation — sits below the frosted command bar */}
+        <div className="flex items-center gap-6" style={{ paddingTop: 24, borderBottom: `1px solid ${tokens.hairline}` }}>
+          {TABS.map((t) => {
+            const active = activeTab === t.key
+            return (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                style={{
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  color: active ? tokens.accent : tokens.inkSoft,
+                  paddingBottom: 12,
+                  marginBottom: -1,
+                  borderBottom: `2px solid ${active ? tokens.accent : 'transparent'}`,
+                  cursor: 'pointer',
+                  transition: 'color .15s ease, border-color .15s ease',
+                }}
+              >
+                {t.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {activeTab === 'bookings' ? (
+          <>
+            {/* Eyebrow + date */}
         <div className="flex items-end justify-between" style={{ paddingTop: 32, paddingBottom: 20 }}>
           <span
             className="uppercase"
@@ -316,6 +360,14 @@ export default function Dashboard({ password }) {
               </div>
             ))}
           </div>
+        )}
+          </>
+        ) : (
+          <AccountsTab
+            bookings={bookings}
+            password={password}
+            onPaymentRecorded={handlePaymentRecorded}
+          />
         )}
       </main>
 
