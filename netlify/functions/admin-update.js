@@ -1,59 +1,75 @@
 import { createClient } from '@supabase/supabase-js'
 import { companyConfig } from '../../src/companyConfig.js'
+import { getCategory, weekLabels } from '../../src/bookingEngine.js'
 import { createCalendarEvent } from './_shared/google-calendar.js'
 import { sendBookingIcsEmail } from './_shared/calendar-email.js'
-import { bookingStartISO } from './_shared/datetime.js'
+import { bookingStartISO, dateInTimezone } from './_shared/datetime.js'
 
 const VALID_STATUSES = ['confirmed', 'cancelled', 'pending']
 
-// Trusted server-side service → duration (minutes) map. Mirrors the PRICES map
-// in submit-booking.js: the event duration is read here, never from the client.
-// Consumed by the calendar sync wired in Prompt 4. Keep in sync with companyConfig.
-export const SERVICE_DURATIONS = {
-  'Private lesson (1hr)': 60,
-  'Group session (1hr)': 60,
-  'Stroke assessment (30min)': 30,
-  'Junior squad trial': 60,
+// Calendar event description, built from trusted booking fields.
+function buildDescription(row) {
+  const lines = [
+    `Customer: ${row.name}`,
+    `Email: ${row.email}`,
+    row.phone ? `Phone: ${row.phone}` : null,
+    `Service: ${row.category_label || row.service}`,
+    row.level ? `Level: ${row.level}` : null,
+    row.option_name ? `Option: ${row.option_name}` : null,
+  ]
+  if (Array.isArray(row.selected_weeks) && row.selected_weeks.length) {
+    lines.push(`Weeks: ${weekLabels(row.category_id, row.selected_weeks).join(', ')}`)
+  }
+  lines.push(`Price: KYD $${Number(row.price_kyd || 0).toFixed(2)}`)
+  return lines.filter(Boolean).join('\n')
+}
+
+// All-day date for non-datetime modes: the first selected week's start if known,
+// otherwise the booking's created date (in the business timezone).
+function allDayDateFor(row) {
+  if (Array.isArray(row.selected_weeks) && row.selected_weeks.length) {
+    const cat = getCategory(row.category_id)
+    const first = (cat?.weekOptions || []).find((w) => row.selected_weeks.includes(w.id))
+    if (first?.startDate) return first.startDate
+  }
+  return dateInTimezone(row.created_at || new Date(), companyConfig.timezone)
 }
 
 // Calendar sync for a freshly-confirmed booking. Best-effort and NON-BLOCKING:
 // every failure is logged and returned as a warning string, never thrown — a
 // calendar or email failure must not block the confirmation (CLAUDE.md rule 5).
-// Returns null on full success, or a human warning on partial/total failure.
 async function syncConfirmedBooking(supabase, row) {
-  // Shared inputs read from trusted server-side sources only (never client input).
-  let startISO, summary, description, durationMinutes
+  const mode = row.booking_mode || 'datetime'
+  const summary = `${row.category_label || row.service} — ${row.name}`
+  const description = buildDescription(row)
+  const durationMinutes = row.duration_minutes || 60
+
+  // Compute timing. datetime → precise instant; others → all-day date.
+  let startISO = null
+  let allDayDate = null
   try {
-    durationMinutes = SERVICE_DURATIONS[row.service]
-    if (!durationMinutes) throw new Error(`No duration configured for service "${row.service}"`)
-    startISO = bookingStartISO(row.requested_date, row.requested_time, companyConfig.timezone)
-    summary = `${row.service} — ${row.name}`
-    description = [
-      `Customer: ${row.name}`,
-      `Email: ${row.email}`,
-      ...(row.phone ? [`Phone: ${row.phone}`] : []),
-      `Service: ${row.service}`,
-      `Price: KYD $${Number(row.price_kyd || 0).toFixed(2)}`,
-    ].join('\n')
+    if (mode === 'datetime') {
+      startISO = bookingStartISO(row.requested_date, row.requested_time, companyConfig.timezone)
+    } else {
+      allDayDate = allDayDateFor(row)
+    }
   } catch (err) {
     console.error('Calendar sync prep failed:', err)
-    return 'Booking confirmed, but calendar sync could not run (check the service date/time).'
+    return 'Booking confirmed, but calendar sync could not run (check the booking details).'
   }
 
   const failed = []
 
-  // 1) Business Google Calendar event. On success, persist the event id so this
-  //    is never recreated (idempotency) and the admin UI can show "Synced".
+  // 1) Business calendar event — timed for datetime, all-day for fixed/level/weeks.
   try {
     if (!companyConfig.calendarId) throw new Error('companyConfig.calendarId is not set')
     const eventId = await createCalendarEvent({
       calendarId: companyConfig.calendarId,
       summary,
       description,
-      startISO,
-      durationMinutes,
       timezone: companyConfig.timezone,
       location: companyConfig.location,
+      ...(mode === 'datetime' ? { startISO, durationMinutes } : { allDayDate }),
     })
     const { error: storeErr } = await supabase
       .from('bookings')
@@ -65,23 +81,26 @@ async function syncConfirmedBooking(supabase, row) {
     failed.push('calendar')
   }
 
-  // 2) Customer .ics invite email — independent of the calendar write above.
-  try {
-    await sendBookingIcsEmail({
-      to: row.email,
-      customerName: row.name,
-      summary,
-      description,
-      serviceName: row.service,
-      startISO,
-      durationMinutes,
-      timezone: companyConfig.timezone,
-      location: companyConfig.location,
-      uid: `${row.id}@dropstack.co`,
-    })
-  } catch (err) {
-    console.error('Calendar invite email failed:', err)
-    failed.push('invite email')
+  // 2) Customer .ics invite — ONLY for datetime bookings (others have no precise
+  //    instant to put in an .ics; the customer already got a submit confirmation).
+  if (mode === 'datetime') {
+    try {
+      await sendBookingIcsEmail({
+        to: row.email,
+        customerName: row.name,
+        summary,
+        description,
+        serviceName: row.option_name || row.category_label || row.service,
+        startISO,
+        durationMinutes,
+        timezone: companyConfig.timezone,
+        location: companyConfig.location,
+        uid: `${row.id}@dropstack.co`,
+      })
+    } catch (err) {
+      console.error('Calendar invite email failed:', err)
+      failed.push('invite email')
+    }
   }
 
   return failed.length ? `Booking confirmed, but ${failed.join(' and ')} sync failed.` : null
@@ -120,7 +139,9 @@ export const handler = async (event) => {
       .from('bookings')
       .update({ status })
       .eq('id', id)
-      .select('id, name, email, phone, service, requested_date, requested_time, price_kyd, status, calendar_event_id')
+      .select(
+        'id, name, email, phone, service, category_id, category_label, option_name, booking_mode, duration_minutes, selected_weeks, level, requested_date, requested_time, price_kyd, status, calendar_event_id, created_at',
+      )
       .single()
 
     if (dbError || !row) {

@@ -1,19 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
-
-// Server-side price map (KYD). Mirrors companyConfig.services prices.
-// Price is set here, NOT from the request body, so clients can't set their own.
-const PRICES = {
-  'Private lesson (1hr)': 75.00,
-  'Group session (1hr)': 40.00,
-  'Stroke assessment (30min)': 45.00,
-  'Junior squad trial': 0.00,
-}
-
-const formatLabel = (key) =>
-  key
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase())
+import { findOptionById, getCategory, weekLabels, formatMoney } from '../../src/bookingEngine.js'
 
 const formatValue = (value) => {
   if (Array.isArray(value)) return value.length ? value.join(', ') : '—'
@@ -37,12 +24,6 @@ const summaryRow = (label, value) => `
     <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#6b7280;font-size:14px;width:40%;">${label}</td>
     <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#111827;font-size:14px;font-weight:500;">${formatValue(value)}</td>
   </tr>`
-
-const intakeRows = (intakeData = {}) =>
-  Object.entries(intakeData)
-    .filter(([, value]) => formatValue(value) !== '—')
-    .map(([key, value]) => summaryRow(formatLabel(key), value))
-    .join('')
 
 const emailLayout = ({ heading, intro, rows, accentColor, footer }) => `
 <!DOCTYPE html>
@@ -85,11 +66,32 @@ export const handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'Invalid request body' }) }
   }
 
-  const { name, email, phone, service, date, time, intake = {}, notes } = body
+  const { name, email, phone, categoryId, optionId, selectedWeeks, date, time } = body
 
-  if (!name || !email || !service || !date || !time) {
+  if (!name || !email || !categoryId || !optionId) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Missing required fields' }) }
   }
+
+  // Server-trusted lookup: resolve the option from config so price, duration,
+  // names and booking mode can never be set by the client.
+  const entry = findOptionById(optionId)
+  if (!entry || entry.categoryId !== categoryId) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid service selection' }) }
+  }
+  const { categoryLabel, bookingMode, levelLabel, option } = entry
+  const price = Number(option.price || 0)
+
+  if (bookingMode === 'datetime' && (!date || !time)) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Date and time are required for this service' }) }
+  }
+  if (bookingMode === 'weeks' && !(Array.isArray(selectedWeeks) && selectedWeeks.length)) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Please select at least one week' }) }
+  }
+
+  const cat = getCategory(categoryId)
+  const scheduleNote = entry.levelId
+    ? cat?.levels?.find((l) => l.id === entry.levelId)?.scheduleNote
+    : cat?.scheduleNote
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
@@ -99,13 +101,20 @@ export const handler = async (event) => {
       name,
       email,
       phone: phone || null,
-      service,
-      requested_date: date,
-      requested_time: time,
-      intake_data: intake,
-      notes: notes || null,
+      // Keep `service` populated (combined label) for backward-compatible admin display.
+      service: `${categoryLabel} — ${option.name}`,
+      category_id: categoryId,
+      category_label: categoryLabel,
+      option_id: optionId,
+      option_name: option.name,
+      booking_mode: bookingMode,
+      duration_minutes: option.durationMinutes ?? null,
+      price_kyd: price,
+      selected_weeks: selectedWeeks && selectedWeeks.length ? selectedWeeks : null,
+      level: levelLabel || null,
+      requested_date: bookingMode === 'datetime' ? date : null,
+      requested_time: bookingMode === 'datetime' ? time : null,
       status: 'pending',
-      price_kyd: PRICES[service] ?? 0.00,
     })
     .select('id')
     .single()
@@ -116,35 +125,47 @@ export const handler = async (event) => {
   }
 
   const bookingId = row.id
+
+  // Human-readable "when" line for the emails.
+  let whenLabel
+  let whenHeading = 'Schedule'
+  if (bookingMode === 'datetime') {
+    whenHeading = 'When'
+    whenLabel = `${formatDate(date)} · ${time}`
+  } else if (bookingMode === 'weeks') {
+    whenHeading = 'Weeks'
+    whenLabel = weekLabels(categoryId, selectedWeeks).join(', ')
+  } else {
+    whenLabel = scheduleNote || 'We will confirm your schedule shortly'
+  }
+
   const resend = new Resend(process.env.RESEND_API_KEY)
   const accentColor = process.env.PRIMARY_COLOR || '#21B7B5'
+
+  const detailRows = [
+    summaryRow('Service', categoryLabel),
+    levelLabel ? summaryRow('Level', levelLabel) : '',
+    summaryRow('Option', option.name),
+    summaryRow('Price', formatMoney(price)),
+    summaryRow(whenHeading, whenLabel),
+  ].join('')
 
   const clientHtml = emailLayout({
     heading: process.env.COMPANY_NAME,
     intro: `Hi ${name}, thanks for your booking request! Here's a summary:`,
-    rows: [
-      summaryRow('Service', service),
-      summaryRow('Date', formatDate(date)),
-      summaryRow('Time', time),
-      intakeRows(intake),
-      summaryRow('Reference', bookingId),
-    ].join(''),
+    rows: detailRows + summaryRow('Reference', bookingId),
     accentColor,
     footer: "We'll be in touch shortly to confirm your appointment.",
   })
 
   const ownerHtml = emailLayout({
-    heading: `New booking — ${service}`,
+    heading: `New booking — ${categoryLabel}`,
     intro: `${name} just requested a booking.`,
     rows: [
       summaryRow('Name', name),
       summaryRow('Email', email),
       summaryRow('Phone', phone),
-      summaryRow('Service', service),
-      summaryRow('Date', formatDate(date)),
-      summaryRow('Time', time),
-      intakeRows(intake),
-      summaryRow('Notes', notes),
+      detailRows,
       summaryRow('Booking ID', bookingId),
     ].join(''),
     accentColor,
@@ -162,7 +183,7 @@ export const handler = async (event) => {
       from: `Booking Bot <onboarding@resend.dev>`,
       to: process.env.OWNER_EMAIL,
       replyTo: email,
-      subject: `New booking from ${name} — ${service}`,
+      subject: `New booking from ${name} — ${categoryLabel}`,
       html: ownerHtml,
     }),
   ])

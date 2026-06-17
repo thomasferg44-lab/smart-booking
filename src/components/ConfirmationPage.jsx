@@ -14,7 +14,17 @@ const formatDate = (dateStr) => {
 
 function ConfirmationPage({ submission }) {
   const [logoError, setLogoError] = useState(false)
-  const { email, service, date, time, bookingId } = submission
+  const {
+    email,
+    bookingId,
+    categoryLabel,
+    optionName,
+    level,
+    date,
+    time,
+    weeks,
+    scheduleNote,
+  } = submission
   const { primaryColor, location, locationUrl } = companyConfig
 
   return (
@@ -42,19 +52,49 @@ function ConfirmationPage({ submission }) {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-left">
         <dl className="flex flex-col gap-3">
           <div>
-            <dt className="text-sm text-gray-500">Date</dt>
-            <dd className="font-medium text-gray-900">{formatDate(date)}</dd>
-          </div>
-
-          <div>
-            <dt className="text-sm text-gray-500">Time</dt>
-            <dd className="font-medium text-gray-900">{time}</dd>
-          </div>
-
-          <div>
             <dt className="text-sm text-gray-500">Service</dt>
-            <dd className="font-medium text-gray-900">{service}</dd>
+            <dd className="font-medium text-gray-900">{categoryLabel}</dd>
           </div>
+
+          {level && (
+            <div>
+              <dt className="text-sm text-gray-500">Level</dt>
+              <dd className="font-medium text-gray-900">{level}</dd>
+            </div>
+          )}
+
+          <div>
+            <dt className="text-sm text-gray-500">Option</dt>
+            <dd className="font-medium text-gray-900">{optionName}</dd>
+          </div>
+
+          {date && (
+            <div>
+              <dt className="text-sm text-gray-500">Date</dt>
+              <dd className="font-medium text-gray-900">{formatDate(date)}</dd>
+            </div>
+          )}
+
+          {time && (
+            <div>
+              <dt className="text-sm text-gray-500">Time</dt>
+              <dd className="font-medium text-gray-900">{time}</dd>
+            </div>
+          )}
+
+          {weeks && weeks.length > 0 && (
+            <div>
+              <dt className="text-sm text-gray-500">Weeks</dt>
+              <dd className="font-medium text-gray-900">{weeks.join(', ')}</dd>
+            </div>
+          )}
+
+          {scheduleNote && !date && (
+            <div>
+              <dt className="text-sm text-gray-500">Schedule</dt>
+              <dd className="font-medium text-gray-900">{scheduleNote}</dd>
+            </div>
+          )}
 
           {location && (
             <div>

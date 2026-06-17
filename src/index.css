@@ -49,6 +49,48 @@ select.input {
   border-color: var(--color-primary);
 }
 
+/* Booking engine — selectable cards + step transitions (brand-driven). */
+.choice-card {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  cursor: pointer;
+}
+
+.choice-card:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, #e5e7eb);
+  transform: translateY(-1px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
+}
+
+.choice-card[data-selected='true'] {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+@keyframes stepRise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.step-rise {
+  animation: stepRise 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-rise {
+    animation: none;
+  }
+}
+
 /* Admin dashboard motion — subtle fade+rise on first paint, staggered inline. */
 @keyframes adminRise {
   from {
