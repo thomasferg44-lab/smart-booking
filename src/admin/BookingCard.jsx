@@ -23,7 +23,7 @@ export default function BookingCard({ booking, onUpdate }) {
   const [busy, setBusy] = useState(false)
   const [hover, setHover] = useState(false)
 
-  const { id, name, email, service, requested_date, requested_time, intake_data, notes, status } = booking
+  const { id, name, email, service, requested_date, requested_time, intake_data, notes, status, calendar_event_id } = booking
 
   const intakeEntries = Object.entries(intake_data || {}).filter(
     ([, v]) => formatValue(v) !== '—',
@@ -77,6 +77,14 @@ export default function BookingCard({ booking, onUpdate }) {
             {metaParts.join(' · ')}
           </div>
           <StatusPill status={status} />
+          {status === 'confirmed' && calendar_event_id && (
+            <span
+              title="Added to the business calendar"
+              style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.04em', color: tokens.inkSoft }}
+            >
+              📅 Synced
+            </span>
+          )}
         </div>
       </div>
 

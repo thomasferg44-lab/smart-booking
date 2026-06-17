@@ -12,7 +12,14 @@ dist
 dist-ssr
 *.local
 .env
+.env.*
+!.env.example
 netlify/functions/node_modules
+
+# Service-account / private key files — never commit
+*service-account*.json
+gcp-*.json
+*.pem
 
 # Editor directories and files
 .vscode/*

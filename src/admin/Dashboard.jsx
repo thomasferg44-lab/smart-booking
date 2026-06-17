@@ -163,8 +163,15 @@ export default function Dashboard({ password }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password, id, status }),
       })
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error('update failed')
-      showToast(status === 'confirmed' ? 'Booking confirmed.' : 'Booking cancelled.')
+      if (status === 'confirmed') {
+        // Refetch so the row reflects calendar_event_id (the "Synced" indicator).
+        await loadBookings()
+        showToast(data.warning || 'Booking confirmed.')
+      } else {
+        showToast('Booking cancelled.')
+      }
     } catch {
       setBookings(prev)
       showToast('Could not save that. Try again.')

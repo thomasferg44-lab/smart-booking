@@ -7,11 +7,15 @@ export const companyConfig = {
   ownerEmail: 'thomas@aqualife.ky',
   ownerName: 'Thomas',
   replyToEmail: 'noreply@aqualife.ky',
+  // IANA timezone for calendar events. Prompt C may override it per client.
+  timezone: 'America/Cayman',
+  // Set in Prompt C — the Google Calendar ID to write confirmed bookings to
+  calendarId: '',
   services: [
-    { name: 'Private lesson (1hr)', price: 75.00 },
-    { name: 'Group session (1hr)', price: 40.00 },
-    { name: 'Stroke assessment (30min)', price: 45.00 },
-    { name: 'Junior squad trial', price: 0.00 }, // TODO: set real price (placeholder)
+    { name: 'Private lesson (1hr)', price: 75.00, durationMinutes: 60 },
+    { name: 'Group session (1hr)', price: 40.00, durationMinutes: 60 },
+    { name: 'Stroke assessment (30min)', price: 45.00, durationMinutes: 30 },
+    { name: 'Junior squad trial', price: 0.00, durationMinutes: 60 }, // TODO: set real price (placeholder)
   ],
   timeSlots: [
     '7:00 am', '8:00 am', '9:00 am',
