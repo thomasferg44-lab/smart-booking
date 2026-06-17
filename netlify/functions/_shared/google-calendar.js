@@ -34,15 +34,33 @@ export async function createCalendarEvent({
   durationMinutes,
   timezone,
   location,
+  allDayDate,
 }) {
   if (!calendarId) throw new Error('createCalendarEvent: missing calendarId')
 
-  const start = new Date(startISO)
-  if (Number.isNaN(start.getTime())) {
-    throw new Error(`createCalendarEvent: invalid startISO "${startISO}"`)
+  // Two shapes: an all-day event (allDayDate set, for fixed/level/weeks modes)
+  // or a precise timed event (startISO + durationMinutes, for datetime mode).
+  let timing
+  if (allDayDate) {
+    // All-day event — `end.date` is exclusive, so it's the day after the start.
+    const next = new Date(`${allDayDate}T00:00:00Z`)
+    if (Number.isNaN(next.getTime())) {
+      throw new Error(`createCalendarEvent: invalid allDayDate "${allDayDate}"`)
+    }
+    next.setUTCDate(next.getUTCDate() + 1)
+    timing = { start: { date: allDayDate }, end: { date: next.toISOString().slice(0, 10) } }
+  } else {
+    const start = new Date(startISO)
+    if (Number.isNaN(start.getTime())) {
+      throw new Error(`createCalendarEvent: invalid startISO "${startISO}"`)
+    }
+    // End time is derived server-side from the trusted duration — never the client.
+    const end = new Date(start.getTime() + durationMinutes * 60 * 1000)
+    timing = {
+      start: { dateTime: start.toISOString(), timeZone: timezone },
+      end: { dateTime: end.toISOString(), timeZone: timezone },
+    }
   }
-  // End time is derived server-side from the trusted duration — never the client.
-  const end = new Date(start.getTime() + durationMinutes * 60 * 1000)
 
   // Service-account JWT auth. Credentials are DropStack's, shared across clients.
   const auth = new google.auth.JWT({
@@ -60,11 +78,9 @@ export async function createCalendarEvent({
         summary,
         description,
         ...(location ? { location } : {}),
-        // dateTime carries the absolute instant; timeZone sets the display zone.
         // We deliberately do NOT set `attendees` — the customer gets a .ics via
         // Resend instead (see CLAUDE.md: service accounts can't email attendees).
-        start: { dateTime: start.toISOString(), timeZone: timezone },
-        end: { dateTime: end.toISOString(), timeZone: timezone },
+        ...timing,
       },
     })
 

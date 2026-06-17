@@ -52,3 +52,16 @@ export const bookingStartISO = (dateStr, timeStr, timeZone) => {
   if (off2 !== off) utc = guessUTC - off2 * 60000
   return new Date(utc).toISOString()
 }
+
+// 'YYYY-MM-DD' for an instant in the given timezone (used for all-day events).
+export const dateInTimezone = (date, timeZone) => {
+  const d = date instanceof Date ? date : new Date(date)
+  if (Number.isNaN(d.getTime())) throw new Error(`dateInTimezone: invalid date "${date}"`)
+  // en-CA renders as YYYY-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d)
+}

@@ -3,7 +3,8 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   testDir: './tests',
   use: {
-    baseURL: 'http://localhost:8888',
+    // Defaults to the netlify dev port; override with BASE_URL (e.g. vite on 5180).
+    baseURL: process.env.BASE_URL || 'http://localhost:8888',
   },
   projects: [
     {
