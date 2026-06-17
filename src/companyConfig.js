@@ -4,13 +4,13 @@ export const companyConfig = {
   logo: '/logo.png',
   primaryColor: '#21B7B5',
   accentColor: '#E7A034',
-  ownerEmail: 'thomas@aqualife.ky',
+  ownerEmail: 'thomasferg44@gmail.com',
   ownerName: 'Thomas',
   replyToEmail: 'noreply@aqualife.ky',
   // IANA timezone for calendar events. Prompt C may override it per client.
   timezone: 'America/Cayman',
   // Set in Prompt C — the Google Calendar ID to write confirmed bookings to
-  calendarId: '',
+  calendarId: 'coachgrantcayman@gmail.com',
   services: [
     { name: 'Private lesson (1hr)', price: 75.00, durationMinutes: 60 },
     { name: 'Group session (1hr)', price: 40.00, durationMinutes: 60 },
