@@ -37,7 +37,10 @@ export const companyConfig = {
       options: [
         { id: 'p-1c-30', name: '1 child · 30 min', price: 50, durationMinutes: 30 },
         { id: 'p-1c-60', name: '1 child · 1 hr', price: 100, durationMinutes: 60 },
-        { id: 'p-2c-60', name: '2 children · 1 hr', price: 140, durationMinutes: 60 },
+        { id: 'p-2c-30', name: '2 children · 30 min', price: 60, durationMinutes: 30 },
+        { id: 'p-2c-60', name: '2 children · 1 hr', price: 120, durationMinutes: 60 },
+        { id: 'p-3c-30', name: '3 children · 30 min', price: 75, durationMinutes: 30 },
+        { id: 'p-3c-60', name: '3 children · 1 hr', price: 150, durationMinutes: 60 },
       ],
     },
     {
@@ -45,38 +48,45 @@ export const companyConfig = {
       label: 'Swim Team',
       blurb: 'Weekly squad training on a fixed schedule.',
       bookingMode: 'fixed',
-      scheduleNote: 'Saturdays (1 hr) and Wednesdays (30 min).',
+      scheduleNote: 'Saturday classes (1 hr) and Wednesday classes (30 min).',
       options: [
         { id: 'st-sat-single', name: 'Saturday class (1 hr)', price: 35, durationMinutes: 60 },
         { id: 'st-sat-8', name: 'Saturday · 8-class pack', price: 240, durationMinutes: 60, isPackage: true, packageCount: 8 },
+        { id: 'st-wed-single', name: 'Wednesday class (30 min)', price: 35, durationMinutes: 30 },
+        { id: 'st-wed-8', name: 'Wednesday · 8-class pack', price: 240, durationMinutes: 30, isPackage: true, packageCount: 8 },
       ],
-      discountNote: 'Team members receive a discount — your coach will confirm it on your invoice.',
     },
     {
       id: 'summer-camp',
       label: 'Summer Camp',
-      blurb: 'Pick the weeks that work for you.',
+      blurb: 'Pick the weeks that work for you. Mon–Fri, 9:30–12:30.',
       bookingMode: 'weeks',
+      // TODO (Thomas): set the real 2026 summer-camp week dates (labels + startDate).
+      // startDate drives the all-day calendar event for the first selected week;
+      // left blank for now, so it falls back to the booking's created date.
       weekOptions: [
-        { id: 'wk1', label: 'Week 1 · Jul 7–11', startDate: '2026-07-07' },
-        { id: 'wk2', label: 'Week 2 · Jul 14–18', startDate: '2026-07-14' },
-        { id: 'wk3', label: 'Week 3 · Jul 21–25', startDate: '2026-07-21' },
+        { id: 'wk1', label: 'Week 1', startDate: '' },
+        { id: 'wk2', label: 'Week 2', startDate: '' },
+        { id: 'wk3', label: 'Week 3', startDate: '' },
+        { id: 'wk4', label: 'Week 4', startDate: '' },
       ],
       options: [
         { id: 'sc-dropin', name: 'Drop-in (per day)', price: 65, durationMinutes: 180 },
         { id: 'sc-1wk', name: '1 week (Mon–Fri, 9:30–12:30)', price: 300, durationMinutes: 180 },
+        { id: 'sc-3wk', name: '3 weeks', price: 750, durationMinutes: 180, isPackage: true },
       ],
-      discountNote: '',
+      discountNote:
+        'Water polo team members: special 5-week rate. Splash Ball team members: 50% off per week. Your coach will confirm any team discount on your invoice.',
     },
     {
       id: 'water-polo',
       label: 'Water Polo',
       blurb: 'Fixed weekly sessions.',
       bookingMode: 'fixed',
-      scheduleNote: 'Tue–Fri, 4:00–6:30 PM.',
+      scheduleNote: 'Tuesday–Friday, 4:00–6:30 PM.',
       options: [
         { id: 'wp-session', name: 'Per session', price: 25, durationMinutes: 150 },
-        { id: 'wp-chukka', name: 'Per chukka (every 2 months)', price: 400, durationMinutes: 150, isPackage: true },
+        { id: 'wp-chukka', name: 'Per chukka (billed every 2 months)', price: 400, durationMinutes: 150, isPackage: true },
       ],
     },
     {
