@@ -4,10 +4,10 @@ export const companyConfig = {
   logo: '/logo.png',
   primaryColor: '#21B7B5',
   accentColor: '#E7A034',
-  ownerEmail: 'thomasferg44@gmail.com',
+  ownerEmail: 'coachgrantcayman@gmail.com',
   ownerName: 'Thomas',
-  replyToEmail: 'noreply@aqualife.ky',
-  phone: '',
+  replyToEmail: 'coachgrantcayman@gmail.com',
+  phone: ' +13453263370 ',
   // Currency display — KYD primary, USD secondary at this fixed rate (used by PriceBadge).
   currency: 'KYD',
   usdRate: 0.82,
