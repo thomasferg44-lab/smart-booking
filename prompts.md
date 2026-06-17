@@ -1,246 +1,222 @@
-# PROMPTS.md — Payment Tracking Feature
+# PROMPTS.md — Calendar Sync (P1 → P5)
 
-Run in the existing `auto-booking` project in Claude Code. One prompt at a time. After each: `npm run build`, confirm zero errors, test, then continue.
+Run these in Claude Code **one at a time, in order**. Wait for each to finish, review the summary, then run the next. Each prompt is a copy-paste block between the lines.
 
-Read CLAUDE.md fully before Prompt 1.
-
----
-
-## PROMPT 1 — Database + companyConfig prices
-
-```
-Read CLAUDE.md fully before starting.
-
-We are adding payment tracking to the existing auto-booking project.
-Do NOT touch submit-booking.js, the booking form flow, or any existing admin files yet.
-
-Step 1: Update companyConfig.js
-Add a `price` field (in KYD) to every service in the services array. Use these
-realistic Cayman swim school prices as defaults — the owner will adjust them
-later via Prompt C:
-- "Private lesson (1hr)" → 75.00
-- "Stroke assessment (30min)" → 45.00
-- "Group lesson (1hr)" → 40.00
-- "Open water session (1hr)" → 65.00
-If companyConfig has different services, add price: 0.00 as a placeholder and
-note which ones need real values.
-
-The services array should now look like:
-{ name: "Private lesson (1hr)", price: 75.00 }
-
-Step 2: Update submit-booking.js (the ONE exception to "don't touch it")
-When a booking is submitted, look up the price for the selected service from
-the request body's service field — but the price must come from a server-side
-prices map, NOT from the frontend (clients must not be able to send their own
-price). In submit-booking.js, hardcode a PRICES object that mirrors
-companyConfig's prices:
-const PRICES = {
-  "Private lesson (1hr)": 75.00,
-  "Stroke assessment (30min)": 45.00,
-  // etc.
-}
-Then when inserting to Supabase, add:
-price_kyd: PRICES[service] ?? 0.00
-
-This ensures the price is always set server-side. If the service isn't in PRICES,
-it defaults to 0.00 and the owner can set it manually in the dashboard.
-
-Run npm run build. Confirm zero errors. List exactly what you changed in
-companyConfig.js and submit-booking.js.
-```
+> Before P1: make sure `CLAUDE.md` is in the project root so Claude Code reads the shared context and rules.
+> Before P4: make sure you've run `calendar-setup.sql` in Supabase.
 
 ---
 
-## PROMPT 2 — Price badge on booking form
+## Prompt 1 — Foundation: config + service durations
 
 ```
-Read CLAUDE.md.
+Read CLAUDE.md first and follow all its rules.
 
-Add a price display to the booking form so clients see what they'll pay
-before submitting. This is read-only — clients cannot change the price.
+We are starting the Calendar Sync feature. This first prompt only sets up
+configuration and data shape — do NOT add any Google Calendar code yet.
 
-Create src/components/PriceBadge.jsx:
-- Props: service (string), services (array from companyConfig)
-- Looks up the price for the selected service
-- Displays: "KYD $75.00 (USD $61.50)" using a fixed rate of 1 KYD = 0.82 USD
-- If no service selected or price is 0, shows nothing
-- Styled calmly — a small pill or inline text matching the existing form style
-- Not a separate step, just appears on step 1 below or next to the service
-  dropdown as soon as a service is selected
+Do this:
 
-Wire PriceBadge into the existing step 1 of the booking form (the service
-selection step). Import companyConfig.services and pass them through.
+1. In companyConfig.js:
+   - Add a `durationMinutes` field to every service object. Use these
+     PLACEHOLDER values for now (real values are set later in Prompt C):
+       • 60-min services → 60
+       • 30-min services → 30
+       • anything ambiguous → 60
+   - Add a top-level `timezone: 'America/Cayman'` field with a comment that
+     Prompt C may override it per client.
+   - Add a top-level `calendarId: ''` field with a comment:
+     "// Set in Prompt C — the Google Calendar ID to write confirmed bookings to".
 
-Run npm run build. Open localhost:8888, select a service on step 1 and confirm
-the price appears correctly in both KYD and USD. Screenshot and show me.
-```
+2. Create a trusted SERVER-SIDE durations map (mirroring how the payments
+   PRICES map was done) so the event duration can never be set by the client.
+   Put it wherever the confirm/booking server logic will later read it.
+   Map each service name to its durationMinutes.
 
----
-
-## PROMPT 3 — admin-pay Netlify function
-
-```
-Read CLAUDE.md.
-
-Create netlify/functions/admin-pay.js — a new password-gated function that:
-1. Accepts POST only (405 otherwise).
-2. Parses body: { password, bookingId, paymentDate, paymentMethod }.
-3. Validates password against process.env.ADMIN_PASSWORD (401 if wrong).
-4. Validates bookingId is present (400 if missing).
-5. Validates paymentMethod is one of: 'cash', 'bank_transfer', 'other' (400 if not).
-6. Validates paymentDate is a valid date string (400 if not).
-7. Updates the bookings row:
-   payment_status = 'paid'
-   payment_date = paymentDate
-   payment_method = paymentMethod
-   Also selects back: name, email, service, requested_date, requested_time,
-   price_kyd, booking reference (id).
-8. Sends a receipt email via Resend to the client's email address:
-   - From: bookings@dropstack.co (or process.env.REPLY_TO_EMAIL)
-   - Subject: "Payment received — [service]"
-   - Branded HTML email (match the style of existing emails in submit-booking.js)
-   - Shows: student name, service, lesson date + time, amount paid KYD + USD
-     (1 KYD = 0.82 USD), payment method (human-readable: "Bank transfer" not
-     "bank_transfer"), booking reference, thank you message.
-9. Returns 200 { success: true } on completion.
-10. try/catch with generic 500 on failure.
-
-Do NOT put the Supabase service key or Resend key in frontend code.
-Do NOT modify any existing functions.
-
-Run npm run build, confirm zero errors.
-```
-
----
-
-## PROMPT 4 — Accounts tab UI
-
-```
-Read CLAUDE.md and DESIGN-BRIEF.md (the admin dashboard design spec).
-
-Add an Accounts tab to the existing /admin dashboard. The tab navigation
-sits at the top of the dashboard, below the frosted command bar:
-  [ Bookings ]  [ Accounts ]
-The active tab uses the accent colour underline. Switching tabs is instant
-(no page reload).
-
-Create src/admin/AccountsSummary.jsx:
-- Three stat cards matching the existing dashboard stat card style:
-  "Total Owed" — sum of price_kyd for all unpaid bookings
-  "Paid" — sum of price_kyd for all paid bookings
-  "Outstanding" — same as Total Owed (unpaid)
-- Each card shows KYD primary, USD secondary in smaller text below
-- "Outstanding" card uses the accent colour for its number (matches the
-  Pending card pattern in the existing dashboard)
-
-Create src/admin/PaymentRow.jsx:
-- One booking in the accounts view
-- Shows: client name, service, lesson date, price in KYD + USD, payment status pill
-  (Paid = green, Unpaid = amber — matching StatusPill style)
-- If paid: also shows payment date and payment method (human-readable)
-- If unpaid: shows a "Mark as Paid" button (accent colour, small)
-- Clicking "Mark as Paid" opens PayModal
-
-Create src/admin/PayModal.jsx:
-- A clean modal overlay (blurred backdrop, centred card)
-- Title: "Record payment"
-- Shows booking summary: client name, service, amount (KYD + USD)
-- Two inputs:
-  1. Date received (date picker, defaults to today)
-  2. Payment method (select: Cash / Bank transfer / Other)
-- Two buttons: "Cancel" (grey) and "Confirm payment" (accent)
-- On confirm: calls admin-pay with { password, bookingId, paymentDate,
-  paymentMethod }, shows loading state, closes on success, shows toast
-  "Payment recorded. Receipt sent to [client email]."
-- On error: shows inline error, keeps modal open
-
-Create src/admin/AccountsTab.jsx:
-- Receives: bookings (array), password (string), onPaymentRecorded (callback)
-- Renders AccountsSummary at top
-- Two filters below summary (matching existing dashboard filter style):
-  1. Date range: "From" and "To" date inputs
-  2. Payment status: All / Paid / Outstanding (segmented control)
-- Filtered list of PaymentRows below
-- Empty state: "No bookings match these filters."
-- When a payment is recorded, calls onPaymentRecorded so the parent
-  refreshes the bookings from Supabase
-
-Wire AccountsTab into AdminApp.jsx alongside the existing Dashboard (Bookings tab).
-The accounts tab receives the same bookings data already loaded — no extra
-Supabase call needed.
-
-Run npm run build. Open /admin locally, click Accounts tab. Confirm:
-- Summary cards show correct totals from your test bookings
-- PaymentRows render for each booking
-- Filters work
-- PayModal opens on "Mark as Paid"
-
-Screenshot and show me.
-```
-
----
-
-## PROMPT 5 — Wire, test end-to-end, deploy
-
-```
-Read CLAUDE.md.
-
-End-to-end test checklist — run through each with netlify dev running:
-
-1. Submit a new test booking on / — confirm the price shows on step 1 and the
-   booking saves with the correct price_kyd in Supabase.
-
-2. Open /admin → Accounts tab — confirm the new booking appears as Unpaid
-   with the correct KYD + USD price.
-
-3. Summary cards show correct totals.
-
-4. Click "Mark as Paid" on the test booking — set date to today, method to
-   Bank transfer — confirm:
-   - Modal closes with toast "Payment recorded. Receipt sent to..."
-   - Row updates to Paid with date and method shown
-   - Summary cards update
-   - Check Supabase: payment_status = 'paid', payment_date and payment_method set
-   - Check your email: receipt arrived, looks correct, shows right amounts
-
-5. Date range filter: set a range that excludes the booking — confirm it
-   disappears. Expand range — confirm it reappears.
-
-6. Status filter: Outstanding → only unpaid. Paid → only paid.
-
-7. The existing Bookings tab still works: Confirm/Cancel still function,
-   no regressions.
-
-When all pass:
-git add .
-git commit -m "feat: payment tracking + accounts tab + receipt emails"
-git push
+3. Do NOT wire any calendar logic, do NOT touch the booking submission flow,
+   and do NOT send anything. This prompt is config + map only.
 
 Then:
-- Go to Netlify → booking site → Trigger deploy without cache
-- Test live: submit a booking, mark it paid, check receipt email
-- Confirm Supabase shows payment fields correctly
-
-Report any failures with the exact error and I'll fix before you commit.
+- Confirm `npm run build` passes.
+- Confirm the service dropdown and the PriceBadge still render correctly
+  (adding a third field to each service object must not break them — verify).
+- Work on a branch `feat/calendar-sync`. Do not push to main.
+- Summarize exactly what you changed and flag any deviation from this scope.
 ```
 
 ---
 
-## CONTEXT HANDOFF PROMPT
+## Prompt 2 — Google Calendar module (auth + insert helper)
 
 ```
-I'm adding payment tracking to my auto-booking project (React + Vite + Tailwind,
-Netlify Functions, Supabase bookings table, Resend). The feature adds:
-- price_kyd to each service in companyConfig + server-side price lookup in submit-booking.js
-- PriceBadge on the booking form step 1
-- admin-pay.js Netlify function (password-gated, updates payment fields, sends receipt)
-- Accounts tab in /admin with AccountsSummary, PaymentRow, PayModal, AccountsTab
-- KYD primary + USD secondary (1 KYD = 0.82 USD fixed rate)
-- Date range + payment status filters
+Read CLAUDE.md first and follow all its rules.
 
-Prompts done: [LIST]
-Current issue / next step: [DESCRIBE]
-Last npm run build: [PASTE]
+Build the reusable Google Calendar module. This prompt creates the helper
+ONLY — do not wire it into the booking flow yet.
 
-Read CLAUDE.md and continue.
+Do this:
+
+1. Install the official Google API client (`googleapis`).
+
+2. Create a shared server-side module (place it consistently with the existing
+   Netlify Functions structure, e.g. netlify/functions/_shared/google-calendar.js).
+   It must export an async function, e.g.:
+
+     createCalendarEvent({
+       calendarId,        // string, from companyConfig
+       summary,           // event title
+       description,       // event details
+       startISO,          // event start (ISO string in the business timezone)
+       durationMinutes,   // number
+       timezone,          // IANA name, e.g. 'America/Cayman'
+       location           // optional string
+     }) -> returns the created Google event's id
+
+   Implementation requirements:
+   - Authenticate with a service-account JWT built from env vars
+     GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY, scope
+     'https://www.googleapis.com/auth/calendar'.
+   - IMPORTANT: GOOGLE_PRIVATE_KEY arrives with escaped newlines. Convert with
+     .replace(/\\n/g, '\n') before use. Add a clear comment so this isn't lost.
+   - Compute the event end time from startISO + durationMinutes.
+   - Set start/end with the provided `timezone`.
+   - Do NOT add the customer as a Google attendee (we email a .ics separately —
+     see CLAUDE.md). Put the customer's details in the description instead.
+   - Throw a clear, descriptive error on failure (the caller will catch it).
+
+3. Create a small, clearly-named TEST Netlify function (e.g. test-calendar.js)
+   that calls createCalendarEvent with hardcoded sample data, so Thomas can hit
+   it once to confirm a real event lands on the calendar. Add a comment at the
+   top: "TEMPORARY — for manual testing only. Remove before final merge."
+   Do NOT call it yourself; Thomas will trigger it (it's an outward-facing step).
+
+Then:
+- Confirm `npm run build` passes and the functions bundle includes the new files.
+- Stay on branch `feat/calendar-sync`.
+- Summarize changes, list the exact env vars required, and flag deviations.
 ```
+
+---
+
+## Prompt 3 — `.ics` invite + Resend customer email
+
+```
+Read CLAUDE.md first and follow all its rules.
+
+Build the customer-side calendar invite. This prompt creates the .ics builder
+and the email-send capability ONLY — wiring into the confirm flow happens in P4.
+
+Do this:
+
+1. Create a server-side utility that builds a valid .ics (iCalendar) string for
+   a single VEVENT. Inputs: summary, description, startISO, durationMinutes,
+   timezone, location, a unique UID, and an organizer name/email.
+   Requirements:
+   - Produce a standards-compliant VCALENDAR/VEVENT (VERSION:2.0, PRODID, UID,
+     DTSTAMP, DTSTART, DTEND, SUMMARY, DESCRIPTION, LOCATION).
+   - Handle the timezone correctly so the event shows at the right local time
+     for the customer. (Cayman is UTC−5 with no DST; emitting times as UTC `Z`
+     computed from the business timezone is acceptable and unambiguous for v1.)
+   - Escape commas, semicolons, and newlines per the iCal spec.
+
+2. Extend the existing Resend email code (reuse RESEND_API_KEY and the existing
+   from-address) to send the customer an email with the .ics attached, named
+   like `booking.ics`, with a friendly subject and short body confirming the
+   booking. Mirror the structure of the existing receipt email so styling and
+   sender stay consistent.
+
+3. Do NOT wire this into the confirm flow yet. Expose it as a clean function the
+   P4 integration can call. Do not send any real email yourself — Thomas runs
+   outward-facing tests.
+
+Then:
+- Confirm `npm run build` passes.
+- Stay on branch `feat/calendar-sync`.
+- Summarize changes and flag deviations.
+```
+
+---
+
+## Prompt 4 — Wire both into the confirm flow
+
+```
+Read CLAUDE.md first and follow all its rules.
+Confirm calendar-setup.sql has been run in Supabase before relying on the new
+columns (calendar_event_id, calendar_synced_at).
+
+This is the integration step. Hook calendar sync into the existing action that
+sets a booking's status to `confirmed`.
+
+Do this:
+
+1. Locate the existing server-side handler that transitions a booking to
+   `confirmed` (the admin confirm action). Do not create a new status — use the
+   existing one.
+
+2. When a booking becomes `confirmed` AND its calendar_event_id is null:
+   a. Read the service's duration from the trusted server-side durations map
+      (from P1) — never from client input.
+   b. Build the event title as `{service name} — {customer name}` and a
+      description containing customer name, email, phone (if present), service,
+      and price.
+   c. Call createCalendarEvent (P2) using companyConfig.calendarId and
+      companyConfig.timezone. On success, write the returned event id to
+      bookings.calendar_event_id and set calendar_synced_at = now().
+   d. Build the .ics and email it to the customer via the P3 function.
+
+3. Resilience (critical — see CLAUDE.md rule 5):
+   - The confirmation must succeed even if the calendar write or the email fails.
+   - Wrap calendar + email in try/catch. On failure, log a clear error and
+     return a non-blocking warning to the admin UI; do NOT roll back the
+     confirmation.
+   - Idempotency: if calendar_event_id already exists, skip creation entirely.
+
+4. Admin UI: on confirmed rows that synced successfully, show a small, quiet
+   indicator (e.g. a 📅 icon or "Synced" pill) consistent with the existing
+   dashboard styling. If sync failed, show a subtle warning state instead.
+
+Then:
+- Confirm `npm run build` passes.
+- Stay on branch `feat/calendar-sync`.
+- Summarize changes, describe the failure-handling behavior, and flag deviations.
+```
+
+---
+
+## Prompt 5 — Test, no-regressions, branch + PR
+
+```
+Read CLAUDE.md first and follow all its rules.
+
+Finalize the feature for Thomas's live pass.
+
+Do this:
+
+1. Run `npm run build` — confirm zero errors.
+2. Run the existing Playwright suite — confirm no regressions. If the P1 config
+   shape change broke any tests, fix them now (this is the "no regressions"
+   step where test fixes are in scope).
+3. Confirm the functions bundle includes the calendar module, the .ics/email
+   code, and the confirm handler.
+4. Remove or clearly neutralize the temporary test-calendar.js function from P2
+   so it doesn't ship as a live endpoint (or leave it but gate it behind an env
+   flag — your call, state which you did).
+5. Confirm no secrets are committed and `.gitignore` covers `.env*` and any key
+   files.
+6. Commit everything to `feat/calendar-sync` and open a PR. Do NOT merge and do
+   NOT deploy — Thomas does that.
+
+Then produce a MANUAL CHECKLIST for Thomas covering the live pass:
+   - Env vars set in Netlify (GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY)
+   - Dad's calendar shared with the service account email
+   - companyConfig.calendarId + timezone set (or note these come in Prompt C)
+   - Merge PR → deploy → confirm a test booking → verify event on the calendar,
+     .ics in the customer inbox, and calendar_event_id populated in Supabase.
+
+Summarize the final state and list anything still pending on Thomas's side.
+```
+
+---
+
+## After P5
+Tell me the build is done and we'll do the live pass together, then onboard the swim academy via Prompt C.
