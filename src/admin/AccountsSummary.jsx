@@ -53,6 +53,9 @@ export default function AccountsSummary({ bookings }) {
     let owed = 0
     let paid = 0
     for (const b of bookings) {
+      // Money totals only count confirmed or paid bookings — pending (and other
+      // unpaid, non-confirmed) bookings never appear in any figure.
+      if (b.status !== 'confirmed' && b.payment_status !== 'paid') continue
       const price = Number(b.price_kyd || 0)
       if (b.payment_status === 'paid') paid += price
       else owed += price
