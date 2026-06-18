@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import BookingCard from './BookingCard'
 import AccountsTab from './AccountsTab'
+import ClientsTab from './ClientsTab'
 import { brandName, tokens } from './adminTheme'
 
 const TABS = [
   { key: 'bookings', label: 'Bookings' },
   { key: 'accounts', label: 'Accounts' },
+  { key: 'clients', label: 'Clients' },
 ]
 
 const FILTERS = [
@@ -369,12 +371,14 @@ export default function Dashboard({ password }) {
           </div>
         )}
           </>
-        ) : (
+        ) : activeTab === 'accounts' ? (
           <AccountsTab
             bookings={bookings}
             password={password}
             onPaymentRecorded={handlePaymentRecorded}
           />
+        ) : (
+          <ClientsTab password={password} />
         )}
       </main>
 

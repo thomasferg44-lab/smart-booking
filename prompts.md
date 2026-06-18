@@ -1,222 +1,206 @@
-# PROMPTS.md — Calendar Sync (P1 → P5)
+# PROMPTS.md — Client CRM (P1 → P5)
 
-Run these in Claude Code **one at a time, in order**. Wait for each to finish, review the summary, then run the next. Each prompt is a copy-paste block between the lines.
+Run these in Claude Code one at a time, in order. Wait for each to finish,
+review the summary, then run the next.
 
-> Before P1: make sure `CLAUDE.md` is in the project root so Claude Code reads the shared context and rules.
-> Before P4: make sure you've run `calendar-setup.sql` in Supabase.
-
----
-
-## Prompt 1 — Foundation: config + service durations
-
-```
-Read CLAUDE.md first and follow all its rules.
-
-We are starting the Calendar Sync feature. This first prompt only sets up
-configuration and data shape — do NOT add any Google Calendar code yet.
-
-Do this:
-
-1. In companyConfig.js:
-   - Add a `durationMinutes` field to every service object. Use these
-     PLACEHOLDER values for now (real values are set later in Prompt C):
-       • 60-min services → 60
-       • 30-min services → 30
-       • anything ambiguous → 60
-   - Add a top-level `timezone: 'America/Cayman'` field with a comment that
-     Prompt C may override it per client.
-   - Add a top-level `calendarId: ''` field with a comment:
-     "// Set in Prompt C — the Google Calendar ID to write confirmed bookings to".
-
-2. Create a trusted SERVER-SIDE durations map (mirroring how the payments
-   PRICES map was done) so the event duration can never be set by the client.
-   Put it wherever the confirm/booking server logic will later read it.
-   Map each service name to its durationMinutes.
-
-3. Do NOT wire any calendar logic, do NOT touch the booking submission flow,
-   and do NOT send anything. This prompt is config + map only.
-
-Then:
-- Confirm `npm run build` passes.
-- Confirm the service dropdown and the PriceBadge still render correctly
-  (adding a third field to each service object must not break them — verify).
-- Work on a branch `feat/calendar-sync`. Do not push to main.
-- Summarize exactly what you changed and flag any deviation from this scope.
-```
+Before P1: CLAUDE.md is in the project root.
+Before P4: crm-setup.sql has been run in Supabase.
 
 ---
 
-## Prompt 2 — Google Calendar module (auth + insert helper)
+## Prompt 1 — admin-clients Netlify function
 
 ```
-Read CLAUDE.md first and follow all its rules.
+Read CLAUDE.md first and follow all its rules. Work on branch feat/client-crm.
 
-Build the reusable Google Calendar module. This prompt creates the helper
-ONLY — do not wire it into the booking flow yet.
+Build the server-side data layer for the CRM. Create a new Netlify function:
+netlify/functions/admin-clients.js
 
-Do this:
+It must be authenticated the same way as the existing admin functions (check how
+admin-update.js and admin-pay.js authenticate — mirror that pattern exactly).
 
-1. Install the official Google API client (`googleapis`).
+The function aggregates one client record per unique email from the bookings
+table. For each unique email, return:
 
-2. Create a shared server-side module (place it consistently with the existing
-   Netlify Functions structure, e.g. netlify/functions/_shared/google-calendar.js).
-   It must export an async function, e.g.:
+  email         — the client's email
+  name          — from their most recent booking
+  phone         — from their most recent booking
+  totalBookings — count of all their bookings
+  lifetimeValue — sum of price_kyd where payment_status = 'paid'
+  outstanding   — sum of price_kyd where status = 'confirmed'
+                  AND payment_status != 'paid'
+  firstBooking  — earliest created_at
+  lastBooking   — most recent created_at
+  tags          — from the clients table (empty array if no record yet)
+  notes         — from the clients table (null if no record yet)
 
-     createCalendarEvent({
-       calendarId,        // string, from companyConfig
-       summary,           // event title
-       description,       // event details
-       startISO,          // event start (ISO string in the business timezone)
-       durationMinutes,   // number
-       timezone,          // IANA name, e.g. 'America/Cayman'
-       location           // optional string
-     }) -> returns the created Google event's id
+JOIN the clients table (LEFT JOIN on email) to include notes + tags.
 
-   Implementation requirements:
-   - Authenticate with a service-account JWT built from env vars
-     GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY, scope
-     'https://www.googleapis.com/auth/calendar'.
-   - IMPORTANT: GOOGLE_PRIVATE_KEY arrives with escaped newlines. Convert with
-     .replace(/\\n/g, '\n') before use. Add a clear comment so this isn't lost.
-   - Compute the event end time from startISO + durationMinutes.
-   - Set start/end with the provided `timezone`.
-   - Do NOT add the customer as a Google attendee (we email a .ics separately —
-     see CLAUDE.md). Put the customer's details in the description instead.
-   - Throw a clear, descriptive error on failure (the caller will catch it).
+Use category_label + option_name for any booking display fields (these come from
+the adaptive engine). Fall back to the existing `service` column if both are
+null (for any legacy rows).
 
-3. Create a small, clearly-named TEST Netlify function (e.g. test-calendar.js)
-   that calls createCalendarEvent with hardcoded sample data, so Thomas can hit
-   it once to confirm a real event lands on the calendar. Add a comment at the
-   top: "TEMPORARY — for manual testing only. Remove before final merge."
-   Do NOT call it yourself; Thomas will trigger it (it's an outward-facing step).
+Sort results by lastBooking DESC (most recently active clients first).
+
+Also add a query param `?email=` that returns the FULL booking history for one
+client — all their bookings, newest first, with: id, created_at, category_label,
+option_name, service (fallback), requested_date, time_slot, selected_weeks,
+level, booking_mode, status, payment_status, price_kyd, calendar_event_id.
 
 Then:
-- Confirm `npm run build` passes and the functions bundle includes the new files.
-- Stay on branch `feat/calendar-sync`.
-- Summarize changes, list the exact env vars required, and flag deviations.
-```
-
----
-
-## Prompt 3 — `.ics` invite + Resend customer email
-
-```
-Read CLAUDE.md first and follow all its rules.
-
-Build the customer-side calendar invite. This prompt creates the .ics builder
-and the email-send capability ONLY — wiring into the confirm flow happens in P4.
-
-Do this:
-
-1. Create a server-side utility that builds a valid .ics (iCalendar) string for
-   a single VEVENT. Inputs: summary, description, startISO, durationMinutes,
-   timezone, location, a unique UID, and an organizer name/email.
-   Requirements:
-   - Produce a standards-compliant VCALENDAR/VEVENT (VERSION:2.0, PRODID, UID,
-     DTSTAMP, DTSTART, DTEND, SUMMARY, DESCRIPTION, LOCATION).
-   - Handle the timezone correctly so the event shows at the right local time
-     for the customer. (Cayman is UTC−5 with no DST; emitting times as UTC `Z`
-     computed from the business timezone is acceptable and unambiguous for v1.)
-   - Escape commas, semicolons, and newlines per the iCal spec.
-
-2. Extend the existing Resend email code (reuse RESEND_API_KEY and the existing
-   from-address) to send the customer an email with the .ics attached, named
-   like `booking.ics`, with a friendly subject and short body confirming the
-   booking. Mirror the structure of the existing receipt email so styling and
-   sender stay consistent.
-
-3. Do NOT wire this into the confirm flow yet. Expose it as a clean function the
-   P4 integration can call. Do not send any real email yourself — Thomas runs
-   outward-facing tests.
-
-Then:
-- Confirm `npm run build` passes.
-- Stay on branch `feat/calendar-sync`.
+- npm run build must pass, function must bundle cleanly.
+- Stay on feat/client-crm.
 - Summarize changes and flag deviations.
 ```
 
 ---
 
-## Prompt 4 — Wire both into the confirm flow
+## Prompt 2 — admin-client-note Netlify function
 
 ```
-Read CLAUDE.md first and follow all its rules.
-Confirm calendar-setup.sql has been run in Supabase before relying on the new
-columns (calendar_event_id, calendar_synced_at).
+Read CLAUDE.md first and follow all its rules. Stay on feat/client-crm.
 
-This is the integration step. Hook calendar sync into the existing action that
-sets a booking's status to `confirmed`.
+Build the notes + tags persistence layer. Create:
+netlify/functions/admin-client-note.js
 
-Do this:
+Authenticated the same way as the other admin functions.
 
-1. Locate the existing server-side handler that transitions a booking to
-   `confirmed` (the admin confirm action). Do not create a new status — use the
-   existing one.
+POST body: { email, notes?, tags? }
+  - Upserts a row in the clients table (insert if no record, update if exists).
+  - Only updates the fields provided (notes and tags are independent — sending
+    just tags should not wipe notes).
+  - Sets updated_at = now().
+  - Returns { success: true, email, notes, tags }.
 
-2. When a booking becomes `confirmed` AND its calendar_event_id is null:
-   a. Read the service's duration from the trusted server-side durations map
-      (from P1) — never from client input.
-   b. Build the event title as `{service name} — {customer name}` and a
-      description containing customer name, email, phone (if present), service,
-      and price.
-   c. Call createCalendarEvent (P2) using companyConfig.calendarId and
-      companyConfig.timezone. On success, write the returned event id to
-      bookings.calendar_event_id and set calendar_synced_at = now().
-   d. Build the .ics and email it to the customer via the P3 function.
-
-3. Resilience (critical — see CLAUDE.md rule 5):
-   - The confirmation must succeed even if the calendar write or the email fails.
-   - Wrap calendar + email in try/catch. On failure, log a clear error and
-     return a non-blocking warning to the admin UI; do NOT roll back the
-     confirmation.
-   - Idempotency: if calendar_event_id already exists, skip creation entirely.
-
-4. Admin UI: on confirmed rows that synced successfully, show a small, quiet
-   indicator (e.g. a 📅 icon or "Synced" pill) consistent with the existing
-   dashboard styling. If sync failed, show a subtle warning state instead.
+Validation:
+  - email is required and must be a non-empty string.
+  - tags must be an array of strings if provided (max 10 tags, each max 30 chars).
+  - notes max 2000 characters.
+  - Return clear 400 errors for invalid input.
 
 Then:
-- Confirm `npm run build` passes.
-- Stay on branch `feat/calendar-sync`.
-- Summarize changes, describe the failure-handling behavior, and flag deviations.
+- npm run build must pass.
+- Summarize and flag deviations.
 ```
 
 ---
 
-## Prompt 5 — Test, no-regressions, branch + PR
+## Prompt 3 — Clients tab + searchable list
+
+```
+Read CLAUDE.md first and follow all its rules. Stay on feat/client-crm.
+
+Build the Clients tab UI. This is a React component that lives in the admin
+dashboard alongside the existing Bookings and Accounts tabs.
+
+Requirements:
+
+1. Add "Clients" to the existing tab navigation in Dashboard.jsx (or wherever
+   the Bookings/Accounts tabs live — check the existing structure and match it
+   exactly, don't restructure the nav).
+
+2. Create src/admin/ClientsTab.jsx. On mount, fetch from admin-clients. Show:
+   - A search bar that filters the list by name or email (client-side filter).
+   - A summary strip at the top: total clients, total lifetime value (KYD),
+     total outstanding (KYD) — styled consistently with the Accounts summary.
+   - A list of client rows. Each row shows:
+       • Client name + email
+       • Total bookings (small badge)
+       • Lifetime value KYD
+       • Outstanding KYD (if > 0, highlight in the brand accent color)
+       • Last booking date (relative: "2 days ago", "Today", etc.)
+       • Tags (small pills, up to 3 shown, "+N more" if more)
+       • A chevron → indicating it's clickable
+   - Clicking a row opens the detail panel (built in P4 — for now just set a
+     selectedClient state and render a placeholder "Detail coming in P4").
+   - Empty state: if no clients yet, show a calm message ("No bookings yet —
+     clients will appear here automatically once bookings come in.").
+   - Loading and error states consistent with existing admin UI.
+
+3. Design must feel native to the existing admin dashboard:
+   - Use the same CSS variable tokens (--color-primary, etc.)
+   - Match the card/row style of BookingCard.jsx
+   - Mobile-first, no overflow issues
+   - No hardcoded colors
+
+Then:
+- npm run build must pass, Playwright must pass (no regressions).
+- Summarize and flag deviations.
+```
+
+---
+
+## Prompt 4 — Client detail panel
+
+```
+Read CLAUDE.md first and follow all its rules. Stay on feat/client-crm.
+Confirm crm-setup.sql has been run in Supabase before testing notes/tags.
+
+Build the client detail panel that opens when a client row is clicked.
+
+Create src/admin/ClientDetail.jsx. It receives the selected client object
+(from the list) and fetches their full booking history via admin-clients?email=.
+
+Show:
+
+1. HEADER — name, email, phone, first seen / last seen dates.
+   A back button / close that returns to the client list.
+
+2. STATS ROW — 4 cards: Total Bookings · Lifetime Value (KYD) · Outstanding (KYD)
+   · Member Since. Styled like the Accounts summary cards.
+
+3. BOOKING HISTORY — a clean list of all their bookings, newest first.
+   Each row: date, category + option (use category_label / option_name, fall back
+   to service), price KYD, status pill, payment status pill.
+   For weeks bookings, show selected weeks. For level bookings, show the level.
+   Show a 📅 icon if calendar_event_id is set.
+
+4. OWNER NOTES — a textarea the owner can type in. Auto-saves on blur (calls
+   admin-client-note). Show a subtle "Saved" confirmation. Max 2000 chars,
+   show a character count.
+
+5. TAGS — display existing tags as removable pills. An input to add a new tag
+   (press Enter or comma to add). Each tag has an ✕ to remove. Saves immediately
+   on change via admin-client-note. Max 10 tags.
+
+Implementation notes:
+  - Notes and tags save independently — editing notes doesn't reset tags.
+  - If the client has no record in the clients table yet, notes is empty and
+    tags is []. First save creates the record.
+  - All saves are non-blocking (don't block the UI while saving).
+  - Show a subtle error if a save fails.
+  - Design must match the admin UI — same tokens, same card style, mobile-first.
+
+Then:
+- npm run build must pass, Playwright must pass.
+- Summarize and flag deviations.
+```
+
+---
+
+## Prompt 5 — Final check, branch + PR
 
 ```
 Read CLAUDE.md first and follow all its rules.
 
-Finalize the feature for Thomas's live pass.
+Finalize the CRM feature for Thomas's live pass.
 
-Do this:
+1. npm run build — zero errors.
+2. Playwright suite — no regressions. Fix any broken selectors from the new
+   Clients tab being added to the nav (this is in scope for P5).
+3. Confirm all four admin functions bundle cleanly:
+   admin-update, admin-pay, admin-clients, admin-client-note.
+4. Confirm no secrets committed, .gitignore still clean.
+5. Commit everything to feat/client-crm and open a PR. Do NOT merge or deploy.
 
-1. Run `npm run build` — confirm zero errors.
-2. Run the existing Playwright suite — confirm no regressions. If the P1 config
-   shape change broke any tests, fix them now (this is the "no regressions"
-   step where test fixes are in scope).
-3. Confirm the functions bundle includes the calendar module, the .ics/email
-   code, and the confirm handler.
-4. Remove or clearly neutralize the temporary test-calendar.js function from P2
-   so it doesn't ship as a live endpoint (or leave it but gate it behind an env
-   flag — your call, state which you did).
-5. Confirm no secrets are committed and `.gitignore` covers `.env*` and any key
-   files.
-6. Commit everything to `feat/calendar-sync` and open a PR. Do NOT merge and do
-   NOT deploy — Thomas does that.
+Then produce a MANUAL CHECKLIST for Thomas:
+  - Run crm-setup.sql in Supabase (if not already done)
+  - Merge PR → Netlify deploys
+  - Open /admin → Clients tab appears
+  - Click a client → detail panel opens, stats correct
+  - Write a note → blurs → "Saved" appears → refresh → note persists
+  - Add a tag → saves immediately → refresh → tag persists
+  - Confirm no regressions on Bookings and Accounts tabs
 
-Then produce a MANUAL CHECKLIST for Thomas covering the live pass:
-   - Env vars set in Netlify (GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY)
-   - Dad's calendar shared with the service account email
-   - companyConfig.calendarId + timezone set (or note these come in Prompt C)
-   - Merge PR → deploy → confirm a test booking → verify event on the calendar,
-     .ics in the customer inbox, and calendar_event_id populated in Supabase.
-
-Summarize the final state and list anything still pending on Thomas's side.
+Summarize the final state of the feature.
 ```
-
----
-
-## After P5
-Tell me the build is done and we'll do the live pass together, then onboard the swim academy via Prompt C.

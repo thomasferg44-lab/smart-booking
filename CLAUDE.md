@@ -1,77 +1,80 @@
-# CLAUDE.md — Calendar Sync Feature
+# CLAUDE.md — Client CRM Feature
 
-**Read this fully before running any prompt.** It defines what we're building, the decisions already made, and the rules you must follow.
-
----
-
-## What we're building
-
-Automatic calendar sync for the **Smart Booking Tool** (`auto-booking`). When a booking's status changes to **`confirmed`** in the admin dashboard, two things happen:
-
-1. **Business calendar** — the event is inserted into the business owner's Google Calendar via a **service account**.
-2. **Customer calendar** — the customer is emailed a **`.ics` attachment** through the existing **Resend** integration, so the event lands in their own calendar (Apple/Google/Outlook).
-
-This lives in the **main project** so every client inherits it. Per-client values come from `companyConfig` and are set later in **Prompt C**.
+Read this fully before writing any code. This is an ADDITION to the existing
+`auto-booking` project. It adds a **Clients tab** to the `/admin` dashboard
+alongside the existing Bookings and Accounts tabs. Do not modify the booking
+form, the calendar sync, the payments flow, or break any existing tabs.
 
 ---
 
-## Decisions already made — do NOT relitigate these
+## What we are building
 
-| Decision | Choice | Why |
-|---|---|---|
-| **Trigger** | Booking status → `confirmed` only | Not on submit, not on payment. Payment is a separate concern. |
-| **Customer invite method** | `.ics` via Resend (NOT Google attendee invites) | Service accounts on non-Workspace Gmail calendars silently fail to send attendee emails. `.ics` works for every client regardless of their Google plan. |
-| **Event model** | **Option A** — one event per booking | A camp signup creates its own event. No "attach attendee to an existing group event" logic. Simple, works for every service type (lessons, camps, cleaning, etc.). |
-| **Event duration** | Matches the service's `durationMinutes` | Different services have different lengths. Duration is read **server-side** from a trusted map, never from the client. |
-| **Event title** | `{service name} — {customer name}` | e.g. `Private lesson (1hr) — Bella Janke` |
-| **Timezone** | Per-client `companyConfig.timezone`, default `America/Cayman` | Cayman is UTC−5 year-round, no daylight saving. |
-| **Cancellation/reschedule sync** | **Out of scope for v1** | We store the event ID now so this can be added later, but we do not delete/patch events yet. |
+A lightweight CRM that turns the booking tool into a real client-management
+platform. The owner gets one record per unique client email, built AUTOMATICALLY
+from existing bookings — no manual data entry ever.
 
----
+### The Clients tab shows
 
-## Architecture: env vars vs. companyConfig
+1. **Searchable client list** — one row per unique client email. Each row shows:
+   name, total bookings, lifetime spend (KYD), outstanding balance, last booking
+   date, and any owner tags.
 
-This distinction is critical — get it right.
-
-**Env vars (Netlify) — shared across ALL clients, these are DropStack's credentials:**
-- `GOOGLE_SERVICE_ACCOUNT_EMAIL` — the service account's `client_email`
-- `GOOGLE_PRIVATE_KEY` — the service account's `private_key` (contains escaped `\n`; convert with `.replace(/\\n/g, '\n')` before use)
-- `RESEND_API_KEY` — already exists, reuse it
-
-**companyConfig (per deployment) — different for each client, set in Prompt C:**
-- `calendarId` — which calendar to write to (placeholder in P1)
-- `timezone` — IANA name, default `'America/Cayman'`
-- `durationMinutes` — added to each service object
+2. **Client detail panel** (click a row) showing:
+   - Contact: name, email, phone (from their most recent booking)
+   - Stats: total bookings, lifetime value (sum of paid), outstanding (confirmed
+     but unpaid), first booking date, last booking date
+   - **Booking history** — every booking, newest first: date, category, option,
+     price KYD, status, payment status
+   - **Owner notes** — private free-text field, editable inline, persisted
+   - **Tags** — simple labels (e.g. "VIP", "Regular", "Trial") owner can add/remove
 
 ---
 
-## Hard rules for every prompt
+## Architecture (critical — read this)
 
-1. **Branch + PR workflow.** Work on a feature branch (`feat/calendar-sync`). Do **not** push to `main`. Open a PR; Thomas merges.
-2. **Thomas handles all outward-facing steps himself** — real emails, Netlify env vars, deploys, and live end-to-end tests. Do not attempt to send real emails, deploy, or trigger live calendar writes on his behalf during the build. Where a step needs that, stop and hand it to him with clear instructions.
-3. **Flag every deviation.** If you must touch a file outside the stated scope of a prompt (like the test regression from the payments build), do it only if the build would otherwise break, and call it out explicitly in your summary.
-4. **Never commit secrets.** The Google JSON key, `.env` files, and any private key must never be committed. Confirm `.gitignore` covers `.env*` and any key files.
-5. **Non-blocking calendar failures.** If a calendar write or `.ics` email fails, the booking confirmation must still succeed. Log the error, surface a non-blocking warning in the admin UI, but never let a calendar failure roll back or block the confirmation.
-6. **Idempotency.** Never create a duplicate calendar event. Only create one when status becomes `confirmed` **and** `calendar_event_id` is currently null. If an event ID already exists, skip.
-7. **Don't break what works.** The booking form, the payment-tracking feature (just shipped), and the existing confirm flow must all keep working. Preserve existing behavior; add to it.
-8. **Match existing patterns.** Mirror the structure already in the repo (how the payment `PRICES` server-side map was done, how Netlify functions and the email/Resend code are organized, how `companyConfig` is shaped).
+**Client records are DERIVED, not stored.** The CRM groups existing `bookings`
+rows by `email` — so every client automatically exists the moment they book.
+No duplicate data, no sync issues, always accurate.
+
+The `bookings` table already has these fields from the adaptive engine (Prompt E):
+  `category_id`, `category_label`, `option_id`, `option_name`, `booking_mode`,
+  `price_kyd`, `duration_minutes`, `selected_weeks`, `level`, `requested_date`,
+  `time_slot`, `status`, `payment_status`, `calendar_event_id`
+
+Use `category_label` + `option_name` for display (not the old `service` field,
+though `service` still exists as a fallback — prefer the new fields).
+
+The ONLY new stored data is owner notes + tags, in a new `clients` table:
+  - `email` (primary key)
+  - `notes` (text)
+  - `tags` (text[] array)
+  - `updated_at`
+
+That's the entire new schema. The SQL is in `crm-setup.sql`.
 
 ---
 
-## Tech context
+## Hard rules (same as all DropStack builds)
 
-- **Stack:** React + Vite + Tailwind front end; **Netlify Functions** as the secure backend proxy; **Supabase** for data; **Resend** for email.
-- **Booking statuses** already exist: `pending`, `confirmed`, `cancelled`. The confirm action is the existing transition to `confirmed` — hook into it, don't invent a new one.
-- **`bookings` table** gets two new columns from `calendar-setup.sql`: `calendar_event_id` (text) and `calendar_synced_at` (timestamptz).
-- **Google API:** use the official `googleapis` (or `google-auth-library` + `googleapis`) Node package with **JWT service-account auth**, scope `https://www.googleapis.com/auth/calendar`.
+1. **Branch + PR.** Work on `feat/client-crm`. Do NOT push to main.
+2. **Thomas handles all outward-facing steps** — deploys, live tests.
+3. **Flag every deviation** from prompt scope (CLAUDE rule 3).
+4. **Never commit secrets.**
+5. **Don't break what works** — Bookings tab, Accounts tab, payments, calendar
+   sync, booking form must all keep working.
+6. **Match existing patterns** — mirror how Dashboard.jsx, AccountsSummary,
+   BookingCard, and the admin Netlify functions are structured.
+7. **Drive colors from CSS variable tokens** — no hardcoded brand colors.
+   The CRM tab must look native to the existing admin UI.
 
 ---
 
-## Definition of done (for the whole kit)
+## Definition of done
 
-- `npm run build` passes with zero errors.
-- Existing Playwright suite passes (no regressions).
-- A confirmed booking writes an event to the business calendar and stores its `calendar_event_id`.
-- The customer receives a valid `.ics` invite via Resend.
-- A calendar/email failure never blocks confirmation.
-- Everything is on `feat/calendar-sync` as an open PR for Thomas to merge.
+- `npm run build` zero errors.
+- Playwright suite passes, no regressions.
+- Clients tab appears in admin nav alongside Bookings and Accounts.
+- Every booker auto-appears as a client row.
+- Client detail panel shows correct aggregated stats + full booking history.
+- Notes and tags persist via Supabase.
+- Everything on `feat/client-crm` as an open PR for Thomas to merge.
