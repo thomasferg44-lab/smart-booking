@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import { companyConfig } from '../companyConfig'
-import { getCategory, weekLabels, PRIVATE_LOCATIONS, laneFee, formatKyd, locationLabel } from '../bookingEngine'
+import { getCategory, weekLabels, PRIVATE_LOCATIONS, laneFee, formatKyd, locationLabel, LESSON_PACKS, PACK_DISCOUNTS, PACK_SIZES } from '../bookingEngine'
 import PriceBadge from './PriceBadge'
 
 const STEP_LABELS = ['Service', 'Option', 'Details', 'Your details', 'Review']
@@ -67,6 +67,15 @@ function BookingForm({ onSuccess }) {
   const [weeks, setWeeks] = useState([])
   const [quantity, setQuantity] = useState(1)
   const [location, setLocation] = useState('lions-pool')
+  const [pack, setPack] = useState('none')
+
+  // Discount code (applied on the review screen; validated server-side).
+  const [showCode, setShowCode] = useState(false)
+  const [codeInput, setCodeInput] = useState('')
+  const [appliedCode, setAppliedCode] = useState('')
+  const [appliedDiscountPct, setAppliedDiscountPct] = useState(0)
+  const [codeError, setCodeError] = useState('')
+  const [codeChecking, setCodeChecking] = useState(false)
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -83,14 +92,22 @@ function BookingForm({ onSuccess }) {
   const isPrivate = categoryId === 'private-lessons'
   // Lion's Pool adds a per-lesson lane rental fee based on the option's duration.
   const laneFeeAmount = isPrivate && option && location === 'lions-pool' ? laneFee(option.durationMinutes) : 0
+  // A pack fixes the quantity (5/10); otherwise the stepper sets it.
+  const effQty = isPrivate ? (pack === 'none' ? quantity : PACK_SIZES[pack]) : 0
+  const packDiscountMult = PACK_DISCOUNTS[pack] ?? 1
+  const codeDiscountMult = 1 - appliedDiscountPct / 100
+  // Pack-card total for display (no code applied yet): base × pack discount × size
+  // + lane fee × size.
+  const packCardTotal = (packId) =>
+    option ? option.price * (PACK_DISCOUNTS[packId] ?? 1) * PACK_SIZES[packId] + laneFeeAmount * PACK_SIZES[packId] : 0
   // Per-week options multiply by weeks ticked; Private Lessons charge
-  // (base + lane fee) × quantity; packages and everything else stay flat.
+  // (base × pack discount × qty × code discount) + lane fee × qty; else flat.
   const selectedPrice = !option
     ? 0
     : mode === 'weeks' && !option.isPackage && weeks.length > 0
       ? option.price * weeks.length
       : isPrivate
-        ? (option.price + laneFeeAmount) * quantity
+        ? option.price * packDiscountMult * effQty * codeDiscountMult + laneFeeAmount * effQty
         : option.price
   const scheduleNote = level?.scheduleNote || category?.scheduleNote || null
   const emailValid = /\S+@\S+\.\S+/.test(email)
@@ -104,7 +121,41 @@ function BookingForm({ onSuccess }) {
     setWeeks([])
     setQuantity(1)
     setLocation('lions-pool')
+    setPack('none')
+    setShowCode(false)
+    setCodeInput('')
+    setAppliedCode('')
+    setAppliedDiscountPct(0)
+    setCodeError('')
     setError('')
+  }
+
+  const applyCode = async () => {
+    const code = codeInput.trim()
+    if (!code || codeChecking) return
+    setCodeChecking(true)
+    setCodeError('')
+    try {
+      const res = await fetch('/.netlify/functions/validate-discount', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+      const data = await res.json()
+      if (data.valid) {
+        setAppliedCode(code.toUpperCase())
+        setAppliedDiscountPct(data.discountPct)
+        setCodeError('')
+      } else {
+        setAppliedCode('')
+        setAppliedDiscountPct(0)
+        setCodeError('Invalid code')
+      }
+    } catch {
+      setCodeError('Could not check that code. Try again.')
+    } finally {
+      setCodeChecking(false)
+    }
   }
 
   const toggleWeek = (id) =>
@@ -148,6 +199,8 @@ function BookingForm({ onSuccess }) {
           selectedWeeks: weeks.length ? weeks : null,
           quantity: isPrivate ? quantity : 1,
           location: isPrivate ? location : null,
+          pack: isPrivate ? pack : 'none',
+          discountCode: isPrivate ? appliedCode || null : null,
           date: mode === 'datetime' ? date : null,
           time: mode === 'datetime' ? time : null,
         }),
@@ -290,6 +343,32 @@ function BookingForm({ onSuccess }) {
                   </div>
                   <DiscountNote note={category.discountNote} />
                   {isPrivate && optionId && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Lesson pack</label>
+                      <div className="grid sm:grid-cols-3 gap-2">
+                        {LESSON_PACKS.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setPack(p.id)}
+                            className="choice-card p-3 text-left"
+                            data-selected={pack === p.id}
+                          >
+                            <div className="font-medium text-gray-900 text-sm">{p.label}</div>
+                            {p.size ? (
+                              <div className="text-xs text-gray-500 mt-1">
+                                {formatKyd(packCardTotal(p.id))}
+                                {p.discountPct > 0 ? ` · Save ${p.discountPct}% (1 free)` : ''}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-500 mt-1">Pick your own number</div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {isPrivate && optionId && pack === 'none' && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Number of lessons</label>
                       <div className="inline-flex items-center gap-3">
@@ -446,13 +525,30 @@ function BookingForm({ onSuccess }) {
                 <Review label="Service" value={category.label} />
                 {level && <Review label="Level" value={level.label} />}
                 <Review label="Option" value={option.name} />
-                {isPrivate && <Review label="Number of lessons" value={String(quantity)} />}
+                {isPrivate && (
+                  <Review
+                    label={pack === 'none' ? 'Number of lessons' : 'Pack'}
+                    value={pack === 'none' ? String(quantity) : `${LESSON_PACKS.find((p) => p.id === pack)?.label} (${effQty} lessons)`}
+                  />
+                )}
                 {isPrivate && <Review label="Location" value={locationLabel(location)} />}
+                {isPrivate && (
+                  <Review label="Base price" value={`${formatKyd(option.price)} × ${effQty} = ${formatKyd(option.price * effQty)}`} />
+                )}
+                {isPrivate && pack === 'pack-10' && <Review label="Pack discount" value="10% off base (1 lesson free)" />}
                 {isPrivate && laneFeeAmount > 0 && (
                   <Review
                     label="Lane rental"
-                    value={`${formatKyd(laneFeeAmount)} × ${quantity} = ${formatKyd(laneFeeAmount * quantity)}`}
+                    value={`${formatKyd(laneFeeAmount)} × ${effQty} = ${formatKyd(laneFeeAmount * effQty)}`}
                   />
+                )}
+                {isPrivate && appliedDiscountPct > 0 && (
+                  <div className="flex items-start justify-between gap-4">
+                    <dt className="text-sm text-gray-500 shrink-0">Code applied</dt>
+                    <dd className="text-sm font-medium text-right" style={{ color: '#1A7F5A' }}>
+                      {appliedCode} — {appliedDiscountPct}% off
+                    </dd>
+                  </div>
                 )}
                 <div className="flex items-center justify-between gap-4">
                   <dt className="text-sm text-gray-500">Price</dt>
@@ -471,6 +567,42 @@ function BookingForm({ onSuccess }) {
                 <Review label="Email" value={email} />
               </dl>
               <DiscountNote note={category.discountNote} />
+              {isPrivate && (
+                <div style={{ marginTop: 16 }}>
+                  {!showCode ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowCode(true)}
+                      style={{ fontSize: 12, color: '#9ca3af', background: 'none', textDecoration: 'underline', cursor: 'pointer' }}
+                    >
+                      Have a code?
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={codeInput}
+                        onChange={(e) => setCodeInput(e.target.value)}
+                        placeholder="Discount code"
+                        className="input"
+                        style={{ maxWidth: 200 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={applyCode}
+                        disabled={codeChecking}
+                        className="px-4 py-2 rounded-lg text-sm font-medium text-white whitespace-nowrap"
+                        style={{ background: 'var(--color-primary)', opacity: codeChecking ? 0.6 : 1 }}
+                      >
+                        {codeChecking ? 'Checking…' : 'Apply'}
+                      </button>
+                    </div>
+                  )}
+                  {appliedDiscountPct > 0 && (
+                    <p className="text-sm mt-2" style={{ color: '#1A7F5A' }}>Code applied — {appliedDiscountPct}% off</p>
+                  )}
+                  {codeError && <p className="text-sm mt-2" style={{ color: '#B42318' }}>{codeError}</p>}
+                </div>
+              )}
             </>
           )}
         </div>

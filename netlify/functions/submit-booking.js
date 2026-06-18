@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
-import { findOptionById, getCategory, weekLabels, formatMoney, laneFee, PRIVATE_LOCATIONS } from '../../src/bookingEngine.js'
+import { findOptionById, getCategory, weekLabels, formatMoney, laneFee, PRIVATE_LOCATIONS, PACK_DISCOUNTS, PACK_SIZES } from '../../src/bookingEngine.js'
+import { discountPctFor } from './_shared/discount-codes.js'
 
 const formatValue = (value) => {
   if (Array.isArray(value)) return value.length ? value.join(', ') : '—'
@@ -66,7 +67,7 @@ export const handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'Invalid request body' }) }
   }
 
-  const { name, email, phone, categoryId, optionId, selectedWeeks, quantity, location, date, time } = body
+  const { name, email, phone, categoryId, optionId, selectedWeeks, quantity, location, pack, discountCode, date, time } = body
 
   if (!name || !email || !categoryId || !optionId) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Missing required fields' }) }
@@ -94,18 +95,40 @@ export const handler = async (event) => {
     price = price * selectedWeeks.length
   }
 
-  // Private Lessons: (base + lane fee) × quantity, all computed server-side from
-  // trusted sources — the trusted option price, the trusted lane-fee map (keyed by
-  // the option's duration, charged only at Lion's Pool), and the server-clamped
-  // quantity (1–20). The client's price/fee/total are never trusted.
+  // Private Lessons: final = (base × pack discount × qty × code discount) + lane
+  // fee × qty. All computed server-side from trusted sources — the trusted option
+  // price, the trusted PACK_DISCOUNTS / lane-fee maps, the server-clamped quantity,
+  // and the discount % looked up server-side. No client total/fee/% is trusted.
   let lessonQuantity = 1
   let lessonLocation = null
+  let lessonPack = null
+  let discountCodeStored = null
+  let discountPctStored = null
   if (categoryId === 'private-lessons') {
-    const q = Number.parseInt(quantity, 10)
-    lessonQuantity = Number.isFinite(q) ? Math.min(20, Math.max(1, q)) : 1
     lessonLocation = PRIVATE_LOCATIONS.some((l) => l.id === location) ? location : 'lions-pool'
     const fee = lessonLocation === 'lions-pool' ? laneFee(option.durationMinutes) : 0
-    price = (price + fee) * lessonQuantity
+
+    // Pack fixes the quantity (5 or 10) and may discount the base; otherwise use
+    // the client stepper quantity, clamped 1–20.
+    lessonPack = pack === 'pack-5' || pack === 'pack-10' ? pack : null
+    const packDiscount = PACK_DISCOUNTS[lessonPack] ?? 1
+    if (lessonPack) {
+      lessonQuantity = PACK_SIZES[lessonPack]
+    } else {
+      const q = Number.parseInt(quantity, 10)
+      lessonQuantity = Number.isFinite(q) ? Math.min(20, Math.max(1, q)) : 1
+    }
+
+    // Discount code: validated + applied server-side, to the base price only.
+    const codePct = discountPctFor(discountCode)
+    if (codePct > 0) {
+      discountCodeStored = String(discountCode).trim().toUpperCase()
+      discountPctStored = codePct
+    }
+    const codeDiscount = 1 - codePct / 100
+
+    const base = Number(option.price || 0) * packDiscount * lessonQuantity * codeDiscount
+    price = base + fee * lessonQuantity
   }
 
   const cat = getCategory(categoryId)
@@ -132,6 +155,9 @@ export const handler = async (event) => {
       price_kyd: price,
       lesson_quantity: lessonQuantity,
       lesson_location: lessonLocation,
+      lesson_pack: lessonPack,
+      discount_code: discountCodeStored,
+      discount_pct: discountPctStored,
       selected_weeks: selectedWeeks && selectedWeeks.length ? selectedWeeks : null,
       level: levelLabel || null,
       requested_date: bookingMode === 'datetime' ? date : null,

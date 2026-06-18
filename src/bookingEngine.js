@@ -67,3 +67,16 @@ export const PRIVATE_LOCATIONS = [
 ]
 
 export const locationLabel = (id) => PRIVATE_LOCATIONS.find((l) => l.id === id)?.label || id
+
+// ── Private Lessons: lesson packs ──────────────────────────────────────────
+// Pack discount multiplies the BASE lesson price only (lane fees stay full rate).
+// Not secret — used for the live pack-card price and re-applied server-side.
+export const PACK_DISCOUNTS = { 'pack-5': 1, 'pack-10': 0.9 }
+export const PACK_SIZES = { 'pack-5': 5, 'pack-10': 10 }
+
+// Selectable cards: "Single lessons" (uses the stepper) + the two packs.
+export const LESSON_PACKS = [
+  { id: 'none', label: 'Single lessons', size: null, discountPct: 0 },
+  { id: 'pack-5', label: 'Pack of 5', size: 5, discountPct: 0 },
+  { id: 'pack-10', label: 'Pack of 10', size: 10, discountPct: 10 },
+]

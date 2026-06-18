@@ -33,7 +33,7 @@ export const handler = async (event) => {
       const { data: rows, error } = await supabase
         .from('bookings')
         .select(
-          'id, created_at, category_id, category_label, option_name, service, requested_date, requested_time, selected_weeks, level, booking_mode, status, payment_status, price_kyd, lesson_quantity, lesson_location, calendar_event_id',
+          'id, created_at, category_id, category_label, option_name, service, requested_date, requested_time, selected_weeks, level, booking_mode, status, payment_status, price_kyd, lesson_quantity, lesson_location, lesson_pack, discount_code, discount_pct, calendar_event_id',
         )
         .eq('email', emailParam)
         .order('created_at', { ascending: false })
@@ -60,6 +60,9 @@ export const handler = async (event) => {
         price_kyd: Number(b.price_kyd || 0),
         lesson_quantity: b.lesson_quantity || 1,
         lesson_location: b.lesson_location || null,
+        lesson_pack: b.lesson_pack || null,
+        discount_code: b.discount_code || null,
+        discount_pct: b.discount_pct || null,
         calendar_event_id: b.calendar_event_id,
       }))
 

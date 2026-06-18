@@ -73,6 +73,11 @@ function HistoryRow({ b }) {
           {b.lesson_location && (
             <div style={{ fontSize: '13px', color: tokens.inkSoft, marginTop: 2 }}>Location: {locationLabel(b.lesson_location)}</div>
           )}
+          {b.discount_code && (
+            <div style={{ fontSize: '13px', color: tokens.inkSoft, marginTop: 2 }}>
+              Discount: {b.discount_code} — {b.discount_pct}% off
+            </div>
+          )}
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
           <div style={{ fontSize: '14px', fontWeight: 600, color: tokens.ink, fontVariantNumeric: 'tabular-nums' }}>

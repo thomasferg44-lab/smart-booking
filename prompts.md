@@ -1,206 +1,195 @@
-# PROMPTS.md — Client CRM (P1 → P5)
+# PROMPTS.md — Final Feature Kit (Packs + Discount Codes + Lesson Tracker)
 
-Run these in Claude Code one at a time, in order. Wait for each to finish,
-review the summary, then run the next.
-
-Before P1: CLAUDE.md is in the project root.
-Before P4: crm-setup.sql has been run in Supabase.
+Run these in Claude Code one at a time, in order.
+Read CLAUDE.md before each prompt. Branch: feat/final-features.
+Do NOT merge or deploy until P3 is done and Thomas has done his live pass.
 
 ---
 
-## Prompt 1 — admin-clients Netlify function
+## Prompt 1 — Lesson packs + discount codes
 
 ```
-Read CLAUDE.md first and follow all its rules. Work on branch feat/client-crm.
+Read CLAUDE.md first and follow all its rules. Work on branch feat/final-features.
 
-Build the server-side data layer for the CRM. Create a new Netlify function:
-netlify/functions/admin-clients.js
+Add two features to the Private Lessons booking flow only. Nothing else touched.
 
-It must be authenticated the same way as the existing admin functions (check how
-admin-update.js and admin-pay.js authenticate — mirror that pattern exactly).
+=== PART A: LESSON PACKS ===
 
-The function aggregates one client record per unique email from the bookings
-table. For each unique email, return:
+The existing quantity stepper (1–20) stays. Add two pack options ABOVE the
+stepper as selectable cards:
 
-  email         — the client's email
-  name          — from their most recent booking
-  phone         — from their most recent booking
-  totalBookings — count of all their bookings
-  lifetimeValue — sum of price_kyd where payment_status = 'paid'
-  outstanding   — sum of price_kyd where status = 'confirmed'
-                  AND payment_status != 'paid'
-  firstBooking  — earliest created_at
-  lastBooking   — most recent created_at
-  tags          — from the clients table (empty array if no record yet)
-  notes         — from the clients table (null if no record yet)
+  • Pack of 5  — no discount, price = option.price × 5 + lane fee × 5
+  • Pack of 10 — 10% discount on base price only (pay for 9, lane fee still
+                 × 10 at full rate)
+                 price = (option.price × 0.90 × 10) + (lane fee × 10)
 
-JOIN the clients table (LEFT JOIN on email) to include notes + tags.
+When a pack card is selected:
+  - The quantity stepper is hidden (pack size is fixed)
+  - The pack card shows the total price and a small "Save X%" or "1 lesson free"
+    badge for the pack of 10
+  - The review screen shows: option name, pack size, base price, lane fee
+    breakdown (if Lion's Pool), pack discount line (if pack of 10), and total
 
-Use category_label + option_name for any booking display fields (these come from
-the adaptive engine). Fall back to the existing `service` column if both are
-null (for any legacy rows).
+When no pack is selected (default), the stepper shows as before — single lessons,
+no discount.
 
-Sort results by lastBooking DESC (most recently active clients first).
+Server-side in submit-booking.js:
+  - Add a trusted PACK_DISCOUNTS map: { 'pack-10': 0.90 } (pack-5 = 1.0)
+  - Compute: base = option.price × pack_discount × quantity
+  - Lane fee = LANE_FEES[duration] × quantity (always full rate, no discount)
+  - Total price_kyd = base + lane_fee
+  - Store: lesson_pack (text, nullable — 'pack-5', 'pack-10', or null for
+    single), lesson_quantity (already exists)
+  - Output migration: `ALTER TABLE bookings ADD COLUMN IF NOT EXISTS
+    lesson_pack text;`
 
-Also add a query param `?email=` that returns the FULL booking history for one
-client — all their bookings, newest first, with: id, created_at, category_label,
-option_name, service (fallback), requested_date, time_slot, selected_weeks,
-level, booking_mode, status, payment_status, price_kyd, calendar_event_id.
+=== PART B: DISCOUNT CODES ===
 
-Then:
-- npm run build must pass, function must bundle cleanly.
-- Stay on feat/client-crm.
-- Summarize changes and flag deviations.
-```
+On the review screen (Step 5), add a subtle small grey text link at the very
+bottom: "Have a code?" — easy to miss, not prominent, no label on earlier steps.
 
----
+Clicking it reveals a small inline input + Apply button (no page change, no modal).
 
-## Prompt 2 — admin-client-note Netlify function
+Four valid codes (store these in companyConfig as a server-side-only object —
+NEVER expose the codes to the client bundle. The validation must happen in
+submit-booking.js only):
+  GRANT5  → 5% off
+  GRANT10 → 10% off
+  GRANT20 → 20% off
+  GRANT25 → 25% off
 
-```
-Read CLAUDE.md first and follow all its rules. Stay on feat/client-crm.
+Discount applies to the base lesson price only (after pack discount if applicable),
+NOT to lane fees. Stacks with pack discount:
+  final = (option.price × pack_discount × quantity × code_discount) + lane_fees
 
-Build the notes + tags persistence layer. Create:
-netlify/functions/admin-client-note.js
+IMPORTANT — the codes must NEVER appear in the client-side bundle. Store them
+only in a server-side map in submit-booking.js (or a shared server file). The
+client sends the code string; the server looks it up and applies the discount.
+The client never knows valid code names from the source code.
 
-Authenticated the same way as the other admin functions.
+On the review screen: if a valid code is applied, show a green "Code applied —
+X% off" line in the price breakdown. If invalid, show a small red "Invalid code"
+message inline. The Apply button calls a lightweight Netlify function
+`validate-discount.js` that returns { valid, discountPct } — it confirms the
+code is real without revealing all valid codes (just returns the % for the
+submitted code).
 
-POST body: { email, notes?, tags? }
-  - Upserts a row in the clients table (insert if no record, update if exists).
-  - Only updates the fields provided (notes and tags are independent — sending
-    just tags should not wipe notes).
-  - Sets updated_at = now().
-  - Returns { success: true, email, notes, tags }.
+Store on booking: discount_code (text, nullable), discount_pct (integer, nullable).
+Migration: `ALTER TABLE bookings ADD COLUMN IF NOT EXISTS discount_code text;
+            ALTER TABLE bookings ADD COLUMN IF NOT EXISTS discount_pct integer;`
 
-Validation:
-  - email is required and must be a non-empty string.
-  - tags must be an array of strings if provided (max 10 tags, each max 30 chars).
-  - notes max 2000 characters.
-  - Return clear 400 errors for invalid input.
+Show the discount in BookingCard.jsx and ClientDetail.jsx booking history
+(e.g. "GRANT20 — 20% off").
 
-Then:
-- npm run build must pass.
-- Summarize and flag deviations.
-```
-
----
-
-## Prompt 3 — Clients tab + searchable list
-
-```
-Read CLAUDE.md first and follow all its rules. Stay on feat/client-crm.
-
-Build the Clients tab UI. This is a React component that lives in the admin
-dashboard alongside the existing Bookings and Accounts tabs.
-
-Requirements:
-
-1. Add "Clients" to the existing tab navigation in Dashboard.jsx (or wherever
-   the Bookings/Accounts tabs live — check the existing structure and match it
-   exactly, don't restructure the nav).
-
-2. Create src/admin/ClientsTab.jsx. On mount, fetch from admin-clients. Show:
-   - A search bar that filters the list by name or email (client-side filter).
-   - A summary strip at the top: total clients, total lifetime value (KYD),
-     total outstanding (KYD) — styled consistently with the Accounts summary.
-   - A list of client rows. Each row shows:
-       • Client name + email
-       • Total bookings (small badge)
-       • Lifetime value KYD
-       • Outstanding KYD (if > 0, highlight in the brand accent color)
-       • Last booking date (relative: "2 days ago", "Today", etc.)
-       • Tags (small pills, up to 3 shown, "+N more" if more)
-       • A chevron → indicating it's clickable
-   - Clicking a row opens the detail panel (built in P4 — for now just set a
-     selectedClient state and render a placeholder "Detail coming in P4").
-   - Empty state: if no clients yet, show a calm message ("No bookings yet —
-     clients will appear here automatically once bookings come in.").
-   - Loading and error states consistent with existing admin UI.
-
-3. Design must feel native to the existing admin dashboard:
-   - Use the same CSS variable tokens (--color-primary, etc.)
-   - Match the card/row style of BookingCard.jsx
-   - Mobile-first, no overflow issues
-   - No hardcoded colors
-
-Then:
-- npm run build must pass, Playwright must pass (no regressions).
-- Summarize and flag deviations.
+=== DONE CRITERIA ===
+  - npm run build zero errors, Playwright 7/7.
+  - Pack pricing math verified (node): pack-10, 1hr, Lion's Pool =
+    (100×0.9×10) + (25×10) = 900 + 250 = 1150 KYD ✓
+  - Discount codes never in client bundle (verify with grep).
+  - Commit to feat/final-features, summarize, flag deviations.
 ```
 
 ---
 
-## Prompt 4 — Client detail panel
+## Prompt 2 — Lesson tracker
 
 ```
-Read CLAUDE.md first and follow all its rules. Stay on feat/client-crm.
-Confirm crm-setup.sql has been run in Supabase before testing notes/tags.
+Read CLAUDE.md first and follow all its rules. Stay on feat/final-features.
 
-Build the client detail panel that opens when a client row is clicked.
+Build the lesson tracker. This is an admin-only feature — clients never see it.
 
-Create src/admin/ClientDetail.jsx. It receives the selected client object
-(from the list) and fetches their full booking history via admin-clients?email=.
+=== DATABASE ===
+Output a migration file `lesson-tracker-setup.sql`:
 
-Show:
+CREATE TABLE IF NOT EXISTS lesson_logs (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id    uuid REFERENCES bookings(id) ON DELETE CASCADE,
+  client_email  text NOT NULL,
+  lesson_date   date NOT NULL,
+  lessons_count integer NOT NULL DEFAULT 1,  -- allows logging multiple at once
+  notes         text,
+  logged_at     timestamptz DEFAULT now(),
+  logged_by     text DEFAULT 'admin'
+);
 
-1. HEADER — name, email, phone, first seen / last seen dates.
-   A back button / close that returns to the client list.
+CREATE INDEX IF NOT EXISTS idx_lesson_logs_email
+  ON lesson_logs (client_email);
+CREATE INDEX IF NOT EXISTS idx_lesson_logs_booking
+  ON lesson_logs (booking_id);
 
-2. STATS ROW — 4 cards: Total Bookings · Lifetime Value (KYD) · Outstanding (KYD)
-   · Member Since. Styled like the Accounts summary cards.
+=== SERVER ===
+Create two Netlify functions, authenticated like all other admin functions:
 
-3. BOOKING HISTORY — a clean list of all their bookings, newest first.
-   Each row: date, category + option (use category_label / option_name, fall back
-   to service), price KYD, status pill, payment status pill.
-   For weeks bookings, show selected weeks. For level bookings, show the level.
-   Show a 📅 icon if calendar_event_id is set.
+1. netlify/functions/admin-lesson-log.js
+   POST { booking_id, client_email, lesson_date, lessons_count (1–20), notes? }
+   → inserts a lesson_log row, returns the new row.
+   Validation: all required fields, lessons_count 1–20, lesson_date valid date.
 
-4. OWNER NOTES — a textarea the owner can type in. Auto-saves on blur (calls
-   admin-client-note). Show a subtle "Saved" confirmation. Max 2000 chars,
-   show a character count.
+2. netlify/functions/admin-lesson-stats.js
+   GET ?email=X → returns for that client:
+     totalLessonsLogged  — sum of lessons_count across all their lesson_logs
+     totalLessonsPaid    — sum of lesson_quantity across their confirmed bookings
+                           (i.e. what they've paid for in total)
+     remaining           — totalLessonsPaid - totalLessonsLogged (can be 0 or
+                           negative if over-delivered)
+     logs                — all lesson_log rows for this client, newest first
+       (id, booking_id, lesson_date, lessons_count, notes, logged_at)
 
-5. TAGS — display existing tags as removable pills. An input to add a new tag
-   (press Enter or comma to add). Each tag has an ✕ to remove. Saves immediately
-   on change via admin-client-note. Max 10 tags.
+=== ADMIN UI ===
+Add a "Lessons" section to ClientDetail.jsx (below booking history, above notes):
 
-Implementation notes:
-  - Notes and tags save independently — editing notes doesn't reset tags.
-  - If the client has no record in the clients table yet, notes is empty and
-    tags is []. First save creates the record.
-  - All saves are non-blocking (don't block the UI while saving).
-  - Show a subtle error if a save fails.
-  - Design must match the admin UI — same tokens, same card style, mobile-first.
+SUMMARY STRIP:
+  • Lessons completed: X
+  • Lessons paid for: Y
+  • Remaining: Z  (highlighted in accent color if > 0, grey if 0)
 
-Then:
-- npm run build must pass, Playwright must pass.
-- Summarize and flag deviations.
+LOG A LESSON button → opens an inline form (not a modal, just expands below):
+  • Date picker (defaults to today)
+  • "Number of lessons" stepper 1–20 (default 1) — so you can log
+    "3 lessons on June 5" in one tap
+  • Optional notes field (e.g. "worked on freestyle turns")
+  • Save button → calls admin-lesson-log → refreshes stats + log
+
+LESSON LOG LIST (below the form):
+  Each entry: date, lessons count (e.g. "× 3"), notes (if any), logged_at time.
+  Newest first. Simple, clean, no delete (logs are permanent).
+
+Design: native to the existing admin UI, same tokens, mobile-first.
+
+=== DONE CRITERIA ===
+  - npm run build zero errors, Playwright passes.
+  - Summarize, flag deviations.
 ```
 
 ---
 
-## Prompt 5 — Final check, branch + PR
+## Prompt 3 — Final check, branch + PR
 
 ```
 Read CLAUDE.md first and follow all its rules.
 
-Finalize the CRM feature for Thomas's live pass.
+Finalize the complete final-features branch for Thomas's live pass.
 
 1. npm run build — zero errors.
-2. Playwright suite — no regressions. Fix any broken selectors from the new
-   Clients tab being added to the nav (this is in scope for P5).
-3. Confirm all four admin functions bundle cleanly:
-   admin-update, admin-pay, admin-clients, admin-client-note.
-4. Confirm no secrets committed, .gitignore still clean.
-5. Commit everything to feat/client-crm and open a PR. Do NOT merge or deploy.
+2. Playwright — 7/7, no regressions. Fix any broken selectors in scope.
+3. Confirm all functions bundle: submit-booking, validate-discount,
+   admin-lesson-log, admin-lesson-stats, plus all existing functions.
+4. SECURITY CHECK: grep the client bundle for 'GRANT' — confirm discount
+   codes are NOT present in any client-side file. Report the result.
+5. No secrets committed, .gitignore clean.
+6. Commit to feat/final-features, open PR. Do NOT merge or deploy.
 
-Then produce a MANUAL CHECKLIST for Thomas:
-  - Run crm-setup.sql in Supabase (if not already done)
-  - Merge PR → Netlify deploys
-  - Open /admin → Clients tab appears
-  - Click a client → detail panel opens, stats correct
-  - Write a note → blurs → "Saved" appears → refresh → note persists
-  - Add a tag → saves immediately → refresh → tag persists
-  - Confirm no regressions on Bookings and Accounts tabs
+Produce a MANUAL CHECKLIST for Thomas:
+  - Run lesson-tracker-setup.sql in Supabase
+  - Run the lesson_pack + discount_code column migrations in Supabase
+  - Merge PR → deploy
+  - Test pack of 10: confirm 10% discount shows, lane fee full price
+  - Test discount code GRANT20: confirm 20% off base, not lane fee
+  - Test "Have a code?" is subtle and not prominent
+  - Open a client in /admin → Lessons section shows, log a lesson,
+    stats update, log entry appears
+  - Log multiple lessons on one date (lessons_count > 1) — stats update correctly
+  - Confirm codes not visible in browser dev tools source
 
-Summarize the final state of the feature.
+Summarize final state of all three features.
 ```
