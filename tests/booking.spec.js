@@ -47,7 +47,7 @@ test('datetime flow shows price and completes (mocked submit)', async ({ page })
 
   // Adaptive details: date + time.
   await page.fill('#date', today)
-  await page.getByRole('button', { name: companyConfig.timeSlots[0] }).click()
+  await page.fill('#time', '9:00 AM')
   await cont(page)
 
   // Customer details.
@@ -113,7 +113,7 @@ test('error message appears on failed submit', async ({ page }) => {
   await page.getByRole('button', { name: cat.options[0].name }).click()
   await cont(page)
   await page.fill('#date', today)
-  await page.getByRole('button', { name: companyConfig.timeSlots[0] }).click()
+  await page.fill('#time', '9:00 AM')
   await cont(page)
   await page.fill('#name', 'Jane Doe')
   await page.fill('#email', 'jane@example.com')

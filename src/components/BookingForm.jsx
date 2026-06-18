@@ -85,7 +85,7 @@ function BookingForm({ onSuccess }) {
     if (step === 0) return !!categoryId
     if (step === 1) return mode === 'level' ? !!levelId && !!optionId : !!optionId
     if (step === 2) {
-      if (mode === 'datetime') return !!date && !!time
+      if (mode === 'datetime') return !!date && time.trim() !== ''
       if (mode === 'weeks') return weeks.length > 0
       return true // fixed / level → read-only info
     }
@@ -286,33 +286,18 @@ function BookingForm({ onSuccess }) {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Time<span className="text-red-500"> *</span>
+                    <label htmlFor="time" className="block text-sm font-medium text-gray-700 mb-1">
+                      Preferred time<span className="text-red-500"> *</span>
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {companyConfig.timeSlots.map((slot) => {
-                        const selected = time === slot
-                        return (
-                          <button
-                            key={slot}
-                            type="button"
-                            onClick={() => setTime(slot)}
-                            className="px-3 py-2 rounded-full border text-sm transition"
-                            style={
-                              selected
-                                ? {
-                                    borderColor: 'var(--color-primary)',
-                                    backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
-                                    color: 'var(--color-primary)',
-                                  }
-                                : { borderColor: '#d1d5db', backgroundColor: '#fff', color: '#374151' }
-                            }
-                          >
-                            {slot}
-                          </button>
-                        )
-                      })}
-                    </div>
+                    <input
+                      id="time"
+                      type="text"
+                      className="input"
+                      placeholder="e.g. 9:00 AM, 2:30 PM"
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                    />
+                    <p className="mt-1 text-sm text-gray-500">Your coach will confirm availability.</p>
                   </div>
                 </>
               )}
