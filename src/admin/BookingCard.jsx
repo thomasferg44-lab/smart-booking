@@ -23,7 +23,7 @@ export default function BookingCard({ booking, onUpdate }) {
   const [busy, setBusy] = useState(false)
   const [hover, setHover] = useState(false)
 
-  const { id, name, email, service, requested_date, requested_time, intake_data, notes, status, calendar_event_id } = booking
+  const { id, name, email, service, requested_date, requested_time, intake_data, notes, status, calendar_event_id, lesson_quantity } = booking
 
   const intakeEntries = Object.entries(intake_data || {}).filter(
     ([, v]) => formatValue(v) !== '—',
@@ -41,7 +41,8 @@ export default function BookingCard({ booking, onUpdate }) {
     }
   }
 
-  const metaParts = [service, formatDate(requested_date), requested_time].filter(Boolean)
+  const serviceLabel = lesson_quantity > 1 ? `${service} × ${lesson_quantity}` : service
+  const metaParts = [serviceLabel, formatDate(requested_date), requested_time].filter(Boolean)
 
   return (
     <div

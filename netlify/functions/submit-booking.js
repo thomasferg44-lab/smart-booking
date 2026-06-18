@@ -66,7 +66,7 @@ export const handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'Invalid request body' }) }
   }
 
-  const { name, email, phone, categoryId, optionId, selectedWeeks, date, time } = body
+  const { name, email, phone, categoryId, optionId, selectedWeeks, quantity, date, time } = body
 
   if (!name || !email || !categoryId || !optionId) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Missing required fields' }) }
@@ -94,6 +94,15 @@ export const handler = async (event) => {
     price = price * selectedWeeks.length
   }
 
+  // Private Lessons are priced base × quantity (clamped 1–20). The quantity comes
+  // from the client but the base price is always trusted — the server multiplies.
+  let lessonQuantity = 1
+  if (categoryId === 'private-lessons') {
+    const q = Number.parseInt(quantity, 10)
+    lessonQuantity = Number.isFinite(q) ? Math.min(20, Math.max(1, q)) : 1
+    price = price * lessonQuantity
+  }
+
   const cat = getCategory(categoryId)
   const scheduleNote = entry.levelId
     ? cat?.levels?.find((l) => l.id === entry.levelId)?.scheduleNote
@@ -116,6 +125,7 @@ export const handler = async (event) => {
       booking_mode: bookingMode,
       duration_minutes: option.durationMinutes ?? null,
       price_kyd: price,
+      lesson_quantity: lessonQuantity,
       selected_weeks: selectedWeeks && selectedWeeks.length ? selectedWeeks : null,
       level: levelLabel || null,
       requested_date: bookingMode === 'datetime' ? date : null,

@@ -61,6 +61,7 @@ function HistoryRow({ b }) {
         <div className="min-w-0">
           <div className="truncate" style={{ fontSize: '14px', fontWeight: 600, color: tokens.ink }}>
             {title}
+            {b.lesson_quantity > 1 ? ` × ${b.lesson_quantity}` : ''}
             {b.calendar_event_id ? <span title="On the calendar"> 📅</span> : ''}
           </div>
           <div style={{ fontSize: '13px', color: tokens.inkSoft, marginTop: 2 }}>

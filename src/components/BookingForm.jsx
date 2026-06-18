@@ -42,6 +42,19 @@ function DiscountNote({ note }) {
   )
 }
 
+// Square −/+ stepper button (brand-driven; muted when disabled).
+const stepperBtn = (disabled) => ({
+  width: 40,
+  height: 40,
+  borderRadius: 10,
+  border: '1px solid #d1d5db',
+  background: '#fff',
+  color: disabled ? '#d1d5db' : 'var(--color-primary)',
+  fontSize: 20,
+  lineHeight: 1,
+  cursor: disabled ? 'not-allowed' : 'pointer',
+})
+
 function BookingForm({ onSuccess }) {
   const [step, setStep] = useState(0)
   const [logoError, setLogoError] = useState(false)
@@ -52,6 +65,7 @@ function BookingForm({ onSuccess }) {
   const [date, setDate] = useState('')
   const [time, setTime] = useState('')
   const [weeks, setWeeks] = useState([])
+  const [quantity, setQuantity] = useState(1)
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -65,11 +79,16 @@ function BookingForm({ onSuccess }) {
   const level = category?.levels?.find((l) => l.id === levelId) || null
   const optionList = mode === 'level' ? level?.options || [] : category?.options || []
   const option = optionList.find((o) => o.id === optionId) || null
-  // Per-week options multiply by the number of weeks ticked; packages stay flat.
-  const selectedPrice =
-    option && mode === 'weeks' && !option.isPackage && weeks.length > 0
+  const isPrivate = categoryId === 'private-lessons'
+  // Per-week options multiply by weeks ticked; Private Lessons multiply by the
+  // chosen quantity; packages and everything else stay flat.
+  const selectedPrice = !option
+    ? 0
+    : mode === 'weeks' && !option.isPackage && weeks.length > 0
       ? option.price * weeks.length
-      : option?.price ?? 0
+      : isPrivate
+        ? option.price * quantity
+        : option.price
   const scheduleNote = level?.scheduleNote || category?.scheduleNote || null
   const emailValid = /\S+@\S+\.\S+/.test(email)
 
@@ -80,6 +99,7 @@ function BookingForm({ onSuccess }) {
     setDate('')
     setTime('')
     setWeeks([])
+    setQuantity(1)
     setError('')
   }
 
@@ -122,6 +142,7 @@ function BookingForm({ onSuccess }) {
           optionId,
           level: levelId || null,
           selectedWeeks: weeks.length ? weeks : null,
+          quantity: isPrivate ? quantity : 1,
           date: mode === 'datetime' ? date : null,
           time: mode === 'datetime' ? time : null,
         }),
@@ -263,6 +284,34 @@ function BookingForm({ onSuccess }) {
                     ))}
                   </div>
                   <DiscountNote note={category.discountNote} />
+                  {isPrivate && optionId && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Number of lessons</label>
+                      <div className="inline-flex items-center gap-3">
+                        <button
+                          type="button"
+                          aria-label="Decrease quantity"
+                          onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                          disabled={quantity <= 1}
+                          style={stepperBtn(quantity <= 1)}
+                        >
+                          −
+                        </button>
+                        <span style={{ minWidth: 32, textAlign: 'center', fontSize: '16px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: '#111827' }}>
+                          {quantity}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label="Increase quantity"
+                          onClick={() => setQuantity((q) => Math.min(20, q + 1))}
+                          disabled={quantity >= 20}
+                          style={stepperBtn(quantity >= 20)}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </>
@@ -369,6 +418,7 @@ function BookingForm({ onSuccess }) {
                 <Review label="Service" value={category.label} />
                 {level && <Review label="Level" value={level.label} />}
                 <Review label="Option" value={option.name} />
+                {isPrivate && <Review label="Number of lessons" value={String(quantity)} />}
                 <div className="flex items-center justify-between gap-4">
                   <dt className="text-sm text-gray-500">Price</dt>
                   <dd>
