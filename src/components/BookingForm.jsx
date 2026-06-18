@@ -65,6 +65,11 @@ function BookingForm({ onSuccess }) {
   const level = category?.levels?.find((l) => l.id === levelId) || null
   const optionList = mode === 'level' ? level?.options || [] : category?.options || []
   const option = optionList.find((o) => o.id === optionId) || null
+  // Per-week options multiply by the number of weeks ticked; packages stay flat.
+  const selectedPrice =
+    option && mode === 'weeks' && !option.isPackage && weeks.length > 0
+      ? option.price * weeks.length
+      : option?.price ?? 0
   const scheduleNote = level?.scheduleNote || category?.scheduleNote || null
   const emailValid = /\S+@\S+\.\S+/.test(email)
 
@@ -130,7 +135,7 @@ function BookingForm({ onSuccess }) {
         email,
         categoryLabel: category.label,
         optionName: option.name,
-        price: option.price,
+        price: selectedPrice,
         isPackage: !!option.isPackage,
         bookingMode: mode,
         date: mode === 'datetime' ? date : null,
@@ -367,7 +372,7 @@ function BookingForm({ onSuccess }) {
                 <div className="flex items-center justify-between gap-4">
                   <dt className="text-sm text-gray-500">Price</dt>
                   <dd>
-                    <PriceBadge price={option.price} isPackage={option.isPackage} />
+                    <PriceBadge price={selectedPrice} isPackage={option.isPackage} />
                   </dd>
                 </div>
                 {mode === 'datetime' && <Review label="When" value={`${formatDate(date)} · ${time}`} />}

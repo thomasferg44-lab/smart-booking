@@ -79,13 +79,19 @@ export const handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'Invalid service selection' }) }
   }
   const { categoryLabel, bookingMode, levelLabel, option } = entry
-  const price = Number(option.price || 0)
+  let price = Number(option.price || 0)
 
   if (bookingMode === 'datetime' && (!date || !time)) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Date and time are required for this service' }) }
   }
   if (bookingMode === 'weeks' && !(Array.isArray(selectedWeeks) && selectedWeeks.length)) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Please select at least one week' }) }
+  }
+
+  // Per-week options are priced base × number of weeks (computed server-side from
+  // the trusted option price — never from a client-supplied total). Packages are flat.
+  if (bookingMode === 'weeks' && !option.isPackage) {
+    price = price * selectedWeeks.length
   }
 
   const cat = getCategory(categoryId)

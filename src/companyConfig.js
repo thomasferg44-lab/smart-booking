@@ -10,7 +10,7 @@ export const companyConfig = {
   phone: ' +13453263370 ',
   // Currency display — KYD primary, USD secondary at this fixed rate (used by PriceBadge).
   currency: 'KYD',
-  usdRate: 0.82,
+  usdRate: 1.22,
   // IANA timezone for calendar events. Prompt C may override it per client.
   timezone: 'America/Cayman',
   // Set in Prompt C — the Google Calendar ID to write confirmed bookings to
