@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import { companyConfig } from '../companyConfig'
-import { getCategory, weekLabels } from '../bookingEngine'
+import { getCategory, weekLabels, PRIVATE_LOCATIONS, laneFee, formatKyd, locationLabel } from '../bookingEngine'
 import PriceBadge from './PriceBadge'
 
 const STEP_LABELS = ['Service', 'Option', 'Details', 'Your details', 'Review']
@@ -66,6 +66,7 @@ function BookingForm({ onSuccess }) {
   const [time, setTime] = useState('')
   const [weeks, setWeeks] = useState([])
   const [quantity, setQuantity] = useState(1)
+  const [location, setLocation] = useState('lions-pool')
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -80,14 +81,16 @@ function BookingForm({ onSuccess }) {
   const optionList = mode === 'level' ? level?.options || [] : category?.options || []
   const option = optionList.find((o) => o.id === optionId) || null
   const isPrivate = categoryId === 'private-lessons'
-  // Per-week options multiply by weeks ticked; Private Lessons multiply by the
-  // chosen quantity; packages and everything else stay flat.
+  // Lion's Pool adds a per-lesson lane rental fee based on the option's duration.
+  const laneFeeAmount = isPrivate && option && location === 'lions-pool' ? laneFee(option.durationMinutes) : 0
+  // Per-week options multiply by weeks ticked; Private Lessons charge
+  // (base + lane fee) × quantity; packages and everything else stay flat.
   const selectedPrice = !option
     ? 0
     : mode === 'weeks' && !option.isPackage && weeks.length > 0
       ? option.price * weeks.length
       : isPrivate
-        ? option.price * quantity
+        ? (option.price + laneFeeAmount) * quantity
         : option.price
   const scheduleNote = level?.scheduleNote || category?.scheduleNote || null
   const emailValid = /\S+@\S+\.\S+/.test(email)
@@ -100,6 +103,7 @@ function BookingForm({ onSuccess }) {
     setTime('')
     setWeeks([])
     setQuantity(1)
+    setLocation('lions-pool')
     setError('')
   }
 
@@ -143,6 +147,7 @@ function BookingForm({ onSuccess }) {
           level: levelId || null,
           selectedWeeks: weeks.length ? weeks : null,
           quantity: isPrivate ? quantity : 1,
+          location: isPrivate ? location : null,
           date: mode === 'datetime' ? date : null,
           time: mode === 'datetime' ? time : null,
         }),
@@ -312,6 +317,29 @@ function BookingForm({ onSuccess }) {
                       </div>
                     </div>
                   )}
+                  {isPrivate && optionId && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                      <div className="grid sm:grid-cols-3 gap-2">
+                        {PRIVATE_LOCATIONS.map((loc) => (
+                          <button
+                            key={loc.id}
+                            type="button"
+                            onClick={() => setLocation(loc.id)}
+                            className="choice-card p-3 text-left"
+                            data-selected={location === loc.id}
+                          >
+                            <div className="font-medium text-gray-900 text-sm">{loc.label}</div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {loc.laneFee
+                                ? `+ ${formatKyd(laneFee(option.durationMinutes))} per lesson`
+                                : 'No extra fee'}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </>
@@ -419,6 +447,13 @@ function BookingForm({ onSuccess }) {
                 {level && <Review label="Level" value={level.label} />}
                 <Review label="Option" value={option.name} />
                 {isPrivate && <Review label="Number of lessons" value={String(quantity)} />}
+                {isPrivate && <Review label="Location" value={locationLabel(location)} />}
+                {isPrivate && laneFeeAmount > 0 && (
+                  <Review
+                    label="Lane rental"
+                    value={`${formatKyd(laneFeeAmount)} × ${quantity} = ${formatKyd(laneFeeAmount * quantity)}`}
+                  />
+                )}
                 <div className="flex items-center justify-between gap-4">
                   <dt className="text-sm text-gray-500">Price</dt>
                   <dd>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import StatusPill from './StatusPill'
 import { tokens } from './adminTheme'
+import { locationLabel } from '../bookingEngine'
 
 const formatLabel = (key) =>
   key.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase())
@@ -23,7 +24,7 @@ export default function BookingCard({ booking, onUpdate }) {
   const [busy, setBusy] = useState(false)
   const [hover, setHover] = useState(false)
 
-  const { id, name, email, service, requested_date, requested_time, intake_data, notes, status, calendar_event_id, lesson_quantity } = booking
+  const { id, name, email, service, requested_date, requested_time, intake_data, notes, status, calendar_event_id, lesson_quantity, lesson_location } = booking
 
   const intakeEntries = Object.entries(intake_data || {}).filter(
     ([, v]) => formatValue(v) !== '—',
@@ -42,7 +43,12 @@ export default function BookingCard({ booking, onUpdate }) {
   }
 
   const serviceLabel = lesson_quantity > 1 ? `${service} × ${lesson_quantity}` : service
-  const metaParts = [serviceLabel, formatDate(requested_date), requested_time].filter(Boolean)
+  const metaParts = [
+    serviceLabel,
+    formatDate(requested_date),
+    requested_time,
+    lesson_location ? locationLabel(lesson_location) : null,
+  ].filter(Boolean)
 
   return (
     <div

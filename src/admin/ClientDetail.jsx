@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import StatusPill from './StatusPill'
 import { tokens } from './adminTheme'
 import { formatKyd, formatUsd } from './payments'
-import { weekLabels } from '../bookingEngine'
+import { weekLabels, locationLabel } from '../bookingEngine'
 
 const MAX_NOTES = 2000
 const MAX_TAGS = 10
@@ -70,6 +70,9 @@ function HistoryRow({ b }) {
           </div>
           {weeks && <div style={{ fontSize: '13px', color: tokens.inkSoft, marginTop: 2 }}>Weeks: {weeks}</div>}
           {b.level && <div style={{ fontSize: '13px', color: tokens.inkSoft, marginTop: 2 }}>Level: {b.level}</div>}
+          {b.lesson_location && (
+            <div style={{ fontSize: '13px', color: tokens.inkSoft, marginTop: 2 }}>Location: {locationLabel(b.lesson_location)}</div>
+          )}
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
           <div style={{ fontSize: '14px', fontWeight: 600, color: tokens.ink, fontVariantNumeric: 'tabular-nums' }}>
