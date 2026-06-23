@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import BookingCard from './BookingCard'
 import AccountsTab from './AccountsTab'
 import ClientsTab from './ClientsTab'
+import AddBookingModal from './AddBookingModal'
 import { brandName, tokens } from './adminTheme'
 
 const TABS = [
@@ -123,6 +124,7 @@ export default function Dashboard({ password }) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [toast, setToast] = useState(null)
   const [activeTab, setActiveTab] = useState('bookings')
+  const [showAddBooking, setShowAddBooking] = useState(false)
 
   const loadBookings = useCallback(async () => {
     try {
@@ -155,6 +157,12 @@ export default function Dashboard({ password }) {
   }, [toast])
 
   const showToast = (message) => setToast({ message, id: Date.now() })
+
+  const handleBookingCreated = (clientName) => {
+    setShowAddBooking(false)
+    loadBookings()
+    showToast(`Booking added for ${clientName}.`)
+  }
 
   const handleUpdate = async (id, status) => {
     const prev = bookings
@@ -327,9 +335,26 @@ export default function Dashboard({ password }) {
           >
             Bookings
           </span>
-          <span style={{ fontSize: '13px', fontWeight: 500, color: tokens.inkSoft, fontVariantNumeric: 'tabular-nums' }}>
-            {today}
-          </span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowAddBooking(true)}
+              style={{
+                fontSize: '13px',
+                fontWeight: 500,
+                color: '#fff',
+                background: tokens.accent,
+                borderRadius: tokens.radiusControl,
+                padding: '7px 12px',
+                cursor: 'pointer',
+              }}
+            >
+              + Add booking
+            </button>
+            <span style={{ fontSize: '13px', fontWeight: 500, color: tokens.inkSoft, fontVariantNumeric: 'tabular-nums' }}>
+              {today}
+            </span>
+          </div>
         </div>
 
         {/* Stats */}
@@ -381,6 +406,14 @@ export default function Dashboard({ password }) {
           <ClientsTab password={password} />
         )}
       </main>
+
+      {showAddBooking && (
+        <AddBookingModal
+          password={password}
+          onClose={() => setShowAddBooking(false)}
+          onCreated={handleBookingCreated}
+        />
+      )}
 
       {/* Toast */}
       {toast && (
